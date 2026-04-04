@@ -382,6 +382,18 @@ label.select-all {
   color: var(--cyan);
 }
 
+.badge.verified {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+  margin-left: 4px;
+}
+
+.badge.explorer {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  margin-left: 4px;
+}
+
 /* Panel Header Actions */
 .panel-actions {
   display: flex;

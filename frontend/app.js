@@ -23,8 +23,10 @@ const CONFIG = {
     blockExplorerUrls: ['https://scan.pulsechain.com']
   },
 
-  // BlockScout API for token discovery
+  // Token discovery sources
   BLOCKSCOUT_API: 'https://api.scan.pulsechain.com/api',
+  EXPLORER_API: 'http://localhost:3000/api', // Local pulsechain-explorer
+  USE_EXPLORER: true, // Try explorer first, fallback to BlockScout
 
   // Known PulseChain tokens (baseline list for symbols/logos)
   COMMON_TOKENS: [
@@ -127,7 +129,7 @@ const shortenAddress = (addr) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ==================== BLOCKScout API ====================
+// ==================== BlockScout API ====================
 async function fetchTokensFromBlockScout(address) {
   try {
     const url = `${CONFIG.BLOCKSCOUT_API}?module=account&action=tokenlist&address=${address}`;
@@ -141,7 +143,8 @@ async function fetchTokensFromBlockScout(address) {
         name: tok.name,
         decimals: parseInt(tok.decimals),
         balance: parseFloat(tok.balance) / Math.pow(10, parseInt(tok.decimals)),
-        rawBalance: BigInt(tok.balance)
+        rawBalance: BigInt(tok.balance),
+        source: 'blockscout'
       })).filter(tok => tok.balance > 0);
     }
     return [];
@@ -149,6 +152,55 @@ async function fetchTokensFromBlockScout(address) {
     console.error('BlockScout API error:', error);
     return [];
   }
+}
+
+// ==================== Explorer API (pulsechain-explorer) ====================
+async function fetchTokensFromExplorer(address) {
+  if (!CONFIG.USE_EXPLORER) return [];
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    
+    const url = `${CONFIG.EXPLORER_API}/wallet/${address}/tokens`;
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const data = await response.json();
+    
+    return (data.tokens || []).map(tok => ({
+      address: tok.address,
+      symbol: tok.symbol,
+      name: tok.name,
+      decimals: tok.decimals,
+      balance: tok.balance,
+      rawBalance: BigInt(Math.floor(tok.balance * Math.pow(10, tok.decimals))),
+      logoURI: tok.logoURI,
+      verified: tok.verified,
+      source: tok.source || 'explorer'
+    })).filter(tok => tok.balance > 0);
+  } catch (error) {
+    console.log('Explorer API unavailable, will use BlockScout:', error.message);
+    return [];
+  }
+}
+
+// ==================== HYBRID TOKEN FETCH ====================
+async function fetchWalletTokens(address) {
+  // Try explorer first (faster, richer metadata)
+  let tokens = await fetchTokensFromExplorer(address);
+  
+  if (tokens.length === 0) {
+    // Fallback to BlockScout
+    addLog('Using BlockScout for token discovery...');
+    tokens = await fetchTokensFromBlockScout(address);
+  } else {
+    addLog(`Found ${tokens.length} tokens via explorer`);
+  }
+  
+  return tokens;
 }
 
 // ==================== UI UPDATES ====================
@@ -204,7 +256,11 @@ function renderTokenTable() {
       '<span class="badge">Pending</span>';
 
     const isCustom = item.isCustom ? '<span class="badge custom">Custom</span>' : '';
+    const isVerified = item.verified ? '<span class="badge verified">✓ Verified</span>' : '';
     const estValue = item.estValue > 0 ? `$${formatNumber(item.estValue, 4)}` : '—';
+
+    // Show source badge if from explorer
+    const sourceBadge = item.source === 'explorer' ? '<span class="badge explorer">Explorer</span>' : '';
 
     row.innerHTML = `
       <td><input type="checkbox" class="token-checkbox" data-index="${idx}" ${checked}></td>
@@ -216,7 +272,7 @@ function renderTokenTable() {
       </td>
       <td>${formatNumber(item.balance, item.decimals)}</td>
       <td>${estValue}</td>
-      <td>${statusBadge}${isCustom}</td>
+      <td>${statusBadge}${isCustom}${isVerified}${sourceBadge}</td>
     `;
 
     DOM.dustTableBody.appendChild(row);
@@ -255,15 +311,15 @@ async function scanTokens() {
   state.tokenData = [];
 
   try {
-    // 1. Fetch tokens from BlockScout API
-    const bsTokens = await fetchTokensFromBlockScout(state.account);
-    addLog(`BlockScout returned ${bsTokens.length} tokens`);
+    // 1. Fetch tokens via hybrid method (explorer first, fallback to BlockScout)
+    const discoveredTokens = await fetchWalletTokens(state.account);
+    addLog(`Discovered ${discoveredTokens.length} tokens`);
 
     // 2. Merge with COMMON_TOKENS for better metadata
     const allTokens = [];
 
-    for (const token of bsTokens) {
-      // Check if in COMMON_TOKENS
+    for (const token of discoveredTokens) {
+      // Check if in COMMON_TOKENS for richer metadata
       const common = CONFIG.COMMON_TOKENS.find(t => t.address.toLowerCase() === token.address.toLowerCase());
       allTokens.push({
         ...token,
