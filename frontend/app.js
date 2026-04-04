@@ -1,6 +1,6 @@
 /**
  * PurgeX Frontend Application
- * No build step required - works with file:// protocol
+ * Enhanced with BlockScout token discovery and custom token support
  */
 
 // ==================== CONFIGURATION ====================
@@ -23,7 +23,10 @@ const CONFIG = {
     blockExplorerUrls: ['https://scan.pulsechain.com']
   },
 
-  // Known PulseChain tokens (add more as needed)
+  // BlockScout API for token discovery
+  BLOCKSCOUT_API: 'https://api.scan.pulsechain.com/api',
+
+  // Known PulseChain tokens (baseline list for symbols/logos)
   COMMON_TOKENS: [
     {
       address: '0x95B303987A60C71504D99Aa1b13B4DA07b0790ab',
@@ -55,7 +58,6 @@ const CONFIG = {
       symbol: 'WPLS',
       name: 'Wrapped PLS'
     }
-    // Add any other tokens you want to include
   ],
 
   // ABIs (minimal)
@@ -86,6 +88,8 @@ const DOM = {
   dustPanel: document.getElementById('dustPanel'),
   dustTableBody: document.getElementById('dustTableBody'),
   selectAll: document.getElementById('selectAll'),
+  customTokenAddress: document.getElementById('customTokenAddress'),
+  addCustomTokenBtn: document.getElementById('addCustomTokenBtn'),
   emptyState: document.getElementById('emptyState'),
   sweepPanel: document.getElementById('sweepPanel'),
   selectedCount: document.getElementById('selectedCount'),
@@ -105,7 +109,8 @@ let state = {
   account: null,
   provider: null,
   signer: null,
-  tokenData: [], // { token, balance, decimals, allowance, estValue, status }
+  tokenData: [], // { address, symbol, name, balance, decimals, allowance, estValue, status, selected, isCustom }
+  customTokens: [], // Additional tokens user added manually
   prgxBalance: 0,
   pollInterval: null
 };
@@ -121,6 +126,30 @@ const shortenAddress = (addr) => {
 };
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ==================== BLOCKScout API ====================
+async function fetchTokensFromBlockScout(address) {
+  try {
+    const url = `${CONFIG.BLOCKSCOUT_API}?module=account&action=tokenlist&address=${address}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === '1' && data.result) {
+      return data.result.map(tok => ({
+        address: tok.contractAddress,
+        symbol: tok.symbol,
+        name: tok.name,
+        decimals: parseInt(tok.decimals),
+        balance: parseFloat(tok.balance) / Math.pow(10, parseInt(tok.decimals)),
+        rawBalance: BigInt(tok.balance)
+      })).filter(tok => tok.balance > 0);
+    }
+    return [];
+  } catch (error) {
+    console.error('BlockScout API error:', error);
+    return [];
+  }
+}
 
 // ==================== UI UPDATES ====================
 function updateUI() {
@@ -174,6 +203,7 @@ function renderTokenTable() {
       '<span class="badge pending">Approving...</span>' :
       '<span class="badge">Pending</span>';
 
+    const isCustom = item.isCustom ? '<span class="badge custom">Custom</span>' : '';
     const estValue = item.estValue > 0 ? `$${formatNumber(item.estValue, 4)}` : '—';
 
     row.innerHTML = `
@@ -186,7 +216,7 @@ function renderTokenTable() {
       </td>
       <td>${formatNumber(item.balance, item.decimals)}</td>
       <td>${estValue}</td>
-      <td>${statusBadge}</td>
+      <td>${statusBadge}${isCustom}</td>
     `;
 
     DOM.dustTableBody.appendChild(row);
@@ -215,6 +245,105 @@ function addLog(message, type = 'info') {
   if (DOM.statusLog.children.length > 10) {
     DOM.statusLog.removeChild(DOM.statusLog.lastChild);
   }
+}
+
+// ==================== TOKEN SCANNING ====================
+async function scanTokens() {
+  if (!state.account || !state.provider) return;
+
+  addLog('Scanning wallet for tokens...');
+  state.tokenData = [];
+
+  try {
+    // 1. Fetch tokens from BlockScout API
+    const bsTokens = await fetchTokensFromBlockScout(state.account);
+    addLog(`BlockScout returned ${bsTokens.length} tokens`);
+
+    // 2. Merge with COMMON_TOKENS for better metadata
+    const allTokens = [];
+
+    for (const token of bsTokens) {
+      // Check if in COMMON_TOKENS
+      const common = CONFIG.COMMON_TOKENS.find(t => t.address.toLowerCase() === token.address.toLowerCase());
+      allTokens.push({
+        ...token,
+        name: common?.name || token.name,
+        symbol: common?.symbol || token.symbol,
+        isCustom: false,
+        selected: true
+      });
+    }
+
+    // 3. Add user's custom tokens
+    for (const customAddr of state.customTokens) {
+      // Skip if already in list
+      if (allTokens.some(t => t.address.toLowerCase() === customAddr.toLowerCase())) continue;
+
+      try {
+        const tokenContract = new ethers.Contract(customAddr, CONFIG.ERC20_ABI, state.provider);
+        const [balance, decimals, symbol, name] = await Promise.all([
+          tokenContract.balanceOf(state.account),
+          tokenContract.decimals(),
+          tokenContract.symbol().catch(() => '???'),
+          tokenContract.name().catch(() => 'Unknown Token')
+        ]);
+
+        if (balance > 0) {
+          allTokens.push({
+            address: customAddr,
+            symbol,
+            name,
+            decimals: Number(decimals),
+            balance: ethers.formatUnits(balance, decimals),
+            rawBalance: balance,
+            isCustom: true,
+            selected: true
+          });
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch custom token ${customAddr}:`, e);
+      }
+    }
+
+    state.tokenData = allTokens;
+    addLog(`Found ${allTokens.length} token(s) with balance`);
+
+  } catch (error) {
+    addLog(`Scan failed: ${error.message}`, 'error');
+  }
+
+  // Fetch PRGX balance
+  try {
+    if (CONFIG.PRGX_ADDRESS !== ethers.AddressZero) {
+      const prgxContract = new ethers.Contract(CONFIG.PRGX_ADDRESS, CONFIG.ERC20_ABI, state.provider);
+      state.prgxBalance = await prgxContract.balanceOf(state.account);
+    }
+  } catch (e) {
+    state.prgxBalance = 0;
+  }
+
+  updateUI();
+}
+
+// ==================== CUSTOM TOKEN HANDLING ====================
+async function addCustomToken() {
+  const address = DOM.customTokenAddress.value.trim();
+  if (!ethers.isAddress(address)) {
+    alert('Please enter a valid Ethereum address');
+    return;
+  }
+
+  // Check if already added
+  if (state.customTokens.includes(address) || state.tokenData.some(t => t.address.toLowerCase() === address.toLowerCase())) {
+    alert('Token already in list');
+    return;
+  }
+
+  state.customTokens.push(address);
+  DOM.customTokenAddress.value = '';
+
+  addLog(`Added custom token: ${shortenAddress(address)}`);
+  await scanTokens(); // Rescan with new token
 }
 
 // ==================== WALLET CONNECTION ====================
@@ -274,7 +403,6 @@ async function switchNetwork() {
     addLog('Network switched to PulseChain');
     await checkNetwork();
   } catch (error) {
-    // Network not added, try adding
     if (error.code === 4902) {
       try {
         await window.ethereum.request({
@@ -292,72 +420,6 @@ async function switchNetwork() {
   }
 }
 
-// ==================== TOKEN SCANNING ====================
-async function scanTokens() {
-  if (!state.account || !state.provider) return;
-
-  addLog('Scanning wallet for dust tokens...');
-  state.tokenData = [];
-
-  // Worker to fetch token data in parallel
-  const fetchPromises = CONFIG.COMMON_TOKENS.map(async (token) => {
-    try {
-      const tokenContract = new ethers.Contract(token.address, CONFIG.ERC20_ABI, state.provider);
-      const [balance, decimals, symbol, name] = await Promise.all([
-        tokenContract.balanceOf(state.account),
-        tokenContract.decimals(),
-        tokenContract.symbol(),
-        tokenContract.name()
-      ]);
-
-      if (balance > 0) {
-        // Get allowance for sweeper
-        let allowance = 0;
-        try {
-          allowance = await tokenContract.allowance(state.account, CONFIG.SWEEPER_ADDRESS);
-        } catch (e) {
-          allowance = 0;
-        }
-
-        // Estimate value (in PRGX) - would need price feed; placeholder 0 for now
-        const estValue = 0; // TODO: integrate price API
-
-        return {
-          address: token.address,
-          symbol,
-          name,
-          balance: ethers.formatUnits(balance, decimals),
-          decimals: Number(decimals),
-          rawBalance: balance,
-          allowance,
-          estValue,
-          status: allowance > 0 ? 'approved' : 'pending',
-          selected: true // default select all
-        };
-      }
-    } catch (error) {
-      // Token might not be deployed or RPC error - skip
-    }
-    return null;
-  });
-
-  const results = await Promise.all(fetchPromises);
-  state.tokenData = results.filter(r => r !== null);
-
-  // Also check PRGX balance
-  try {
-    if (CONFIG.PRGX_ADDRESS !== ethers.AddressZero) {
-      const prgxContract = new ethers.Contract(CONFIG.PRGX_ADDRESS, CONFIG.ERC20_ABI, state.provider);
-      state.prgxBalance = await prgxContract.balanceOf(state.account);
-    }
-  } catch (e) {
-    state.prgxBalance = 0;
-  }
-
-  addLog(`Found ${state.tokenData.length} dust token(s)`);
-  updateUI();
-}
-
 // ==================== APPROVAL & SWEEPING ====================
 async function approveToken(token) {
   const tokenContract = new ethers.Contract(token.address, CONFIG.ERC20_ABI, state.signer);
@@ -367,7 +429,6 @@ async function approveToken(token) {
   updateTokenRow(token);
 
   try {
-    // Approve max uint256
     const maxAmount = ethers.MaxUint256.toString();
     const tx = await tokenContract.approve(CONFIG.SWEEPER_ADDRESS, maxAmount);
     addLog(`Approving ${token.symbol}... (tx: ${tx.hash.slice(0, 10)}...)`);
@@ -406,7 +467,7 @@ async function sweepSelected() {
     const sweeperContract = new ethers.Contract(CONFIG.SWEEPER_ADDRESS, CONFIG.SWEEPER_ABI, state.signer);
 
     const tokenAddresses = selected.map(t => t.address);
-    const minAmountsOut = selected.map(() => 0); // No minimum
+    const minAmountsOut = selected.map(() => 0);
 
     addLog(`Sweeping ${selected.length} token(s)...`);
     const tx = await sweeperContract.sweepTokens(tokenAddresses, minAmountsOut);
@@ -433,7 +494,7 @@ async function sweepSelected() {
     }
 
     // Refresh balances after sweep
-    await sleep(2000); // Wait for RPC update
+    await sleep(2000);
     await scanTokens();
 
   } catch (error) {
@@ -459,18 +520,19 @@ function updateTokenRow(token) {
 }
 
 // ==================== EVENT LISTENERS ====================
-DOM.connectBtn.addEventListener('click', connectWallet);
-DOM.connectBtnPrompt.addEventListener('click', connectWallet);
-DOM.switchNetworkBtn.addEventListener('click', switchNetwork);
+DOM.connectBtn?.addEventListener('click', connectWallet);
+DOM.connectBtnPrompt?.addEventListener('click', connectWallet);
+DOM.switchNetworkBtn?.addEventListener('click', switchNetwork);
+DOM.addCustomTokenBtn?.addEventListener('click', addCustomToken);
 
-DOM.selectAll.addEventListener('change', (e) => {
+DOM.selectAll?.addEventListener('change', (e) => {
   const checked = e.target.checked;
   state.tokenData.forEach(t => t.selected = checked);
-  updateTokenTable();
+  renderTokenTable();
   updateSweepSummary();
 });
 
-DOM.dustTableBody.addEventListener('change', (e) => {
+DOM.dustTableBody?.addEventListener('change', (e) => {
   if (e.target.classList.contains('token-checkbox')) {
     const idx = parseInt(e.target.dataset.index);
     state.tokenData[idx].selected = e.target.checked;
@@ -478,12 +540,18 @@ DOM.dustTableBody.addEventListener('change', (e) => {
   }
 });
 
-DOM.sweepBtn.addEventListener('click', sweepSelected);
+DOM.sweepBtn?.addEventListener('click', sweepSelected);
 
-// Allow triggering sweep with Enter key
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && DOM.sweepPanel.style.display !== 'none') {
     sweepSelected();
+  }
+});
+
+// Custom token input Enter key
+DOM.customTokenAddress?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    addCustomToken();
   }
 });
 
@@ -492,7 +560,8 @@ function startPolling() {
   if (state.pollInterval) clearInterval(state.pollInterval);
   state.pollInterval = setInterval(async () => {
     await checkNetwork();
-    await scanTokens(); // Refresh balances every 30s
+    // Optionally rescan every 30s to catch new tokens
+    // await scanTokens();
   }, 30_000);
 }
 

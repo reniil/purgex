@@ -260,6 +260,68 @@ button {
   border-left: 3px solid var(--accent);
 }
 
+/* Custom Token Section */
+.custom-token-section {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.custom-token-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.token-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.token-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
+}
+
+.token-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.btn-add-token {
+  padding: 10px 20px;
+  background: var(--cyan);
+  color: #000;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-token:hover {
+  background: #0891b2;
+  transform: translateY(-1px);
+}
+
+.custom-token-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
 .token-info {
   display: flex;
   flex-direction: column;
@@ -313,6 +375,11 @@ label.select-all {
 .badge.pending {
   background: rgba(245, 158, 11, 0.2);
   color: var(--warning);
+}
+
+.badge.custom {
+  background: rgba(6, 182, 212, 0.2);
+  color: var(--cyan);
 }
 
 /* Sweep Summary */
