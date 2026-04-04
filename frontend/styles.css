@@ -382,6 +382,36 @@ label.select-all {
   color: var(--cyan);
 }
 
+/* Panel Header Actions */
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-approve-all {
+  padding: 8px 16px;
+  background: var(--cyan);
+  color: #000;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-approve-all:hover {
+  background: #0891b2;
+  transform: translateY(-1px);
+}
+
+.btn-approve-all:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* Sweep Summary */
 .sweep-summary {
   display: grid;

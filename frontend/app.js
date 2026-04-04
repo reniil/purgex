@@ -346,6 +346,34 @@ async function addCustomToken() {
   await scanTokens(); // Rescan with new token
 }
 
+// ==================== APPROVE ALL ====================
+async function approveAllSelected() {
+  const selected = state.tokenData.filter(t => t.selected);
+
+  if (selected.length === 0) {
+    addLog('No tokens selected for approval', 'error');
+    return;
+  }
+
+  // Filter only those not already approved
+  const pending = selected.filter(t => t.status !== 'approved');
+  if (pending.length === 0) {
+    addLog('All selected tokens already approved');
+    return;
+  }
+
+  addLog(`Approving ${pending.length} token(s)...`);
+
+  // Approve one by one (could parallelize but safer sequentially)
+  for (const token of pending) {
+    await approveToken(token);
+    // Small delay between approvals to avoid nonce issues
+    await sleep(2000);
+  }
+
+  addLog('✅ All approvals complete');
+}
+
 // ==================== WALLET CONNECTION ====================
 async function connectWallet() {
   if (!window.ethereum) {
@@ -531,6 +559,8 @@ DOM.selectAll?.addEventListener('change', (e) => {
   renderTokenTable();
   updateSweepSummary();
 });
+
+DOM.approveAllBtn?.addEventListener('click', approveAllSelected);
 
 DOM.dustTableBody?.addEventListener('change', (e) => {
   if (e.target.classList.contains('token-checkbox')) {
