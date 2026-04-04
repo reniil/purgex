@@ -12,7 +12,7 @@ const CONFIG = {
   // Network constants
   CHAIN_ID: 369,
   NETWORK: {
-    chainId: `0x${369.toString(16)}`, // 0x171
+    chainId: '0x171', // PulseChain chainId
     chainName: 'PulseChain',
     rpcUrls: ['https://rpc.pulsechain.com'],
     nativeCurrency: {
