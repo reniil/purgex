@@ -101,10 +101,7 @@ CONFIG.ABIS = {
 // ================================================================
 
 CONFIG.KNOWN_DUST_TOKENS = [
-  // Real PulseChain tokens with proper checksums
-  '0xA1077a294dDE1B09bB078844df40758a5D0f9a27', // WPLS
-  '0x02f26235791bf5e65a3253aa06845c0451237567', // PLS
-  '0x2b592e8c5c1b4f8b6e3b4c8e4b4c8e4b4c8e4b4c', // Example placeholder (will be skipped)
+  // This will be populated dynamically - no hardcoded tokens needed
 ];
 
 // ================================================================
