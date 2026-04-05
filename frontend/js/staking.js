@@ -56,23 +56,6 @@ class StakingManager {
       const walletBalance = results[4].status === 'fulfilled' ? results[4].value : 0n;
       const prgxPrice = results[5].status === 'fulfilled' ? results[5].value : 0;
       
-      // Debug log the results
-      console.log('🔍 Dashboard raw results:', {
-        stakedBalance: stakedBalance.toString(),
-        pendingRewards: pendingRewards.toString(),
-        totalStaked: totalStaked.toString(),
-        rewardRate: rewardRate.toString(),
-        walletBalance: walletBalance.toString(),
-        prgxPrice: prgxPrice
-      });
-      
-      // Check if any calls failed
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          console.warn(`⚠️ Contract call ${index} failed:`, result.reason);
-        }
-      });
-      
       // Format data
       this.dashboardData = {
         stakedBalance: Number(ethers.formatEther(stakedBalance)),
@@ -82,8 +65,6 @@ class StakingManager {
         walletBalance: Number(ethers.formatEther(walletBalance)),
         prgxPrice: prgxPrice
       };
-      
-      console.log('📊 Formatted dashboard data:', this.dashboardData);
       
       // Calculate APR
       const apr = this.calculateAPR(this.dashboardData.rewardRate, this.dashboardData.totalStaked);
@@ -439,12 +420,7 @@ class StakingManager {
   // UI UPDATES
   // ================================================================
   updateDashboardUI() {
-    if (!this.dashboardData) {
-      console.log('❌ No dashboard data to update UI');
-      return;
-    }
-    
-    console.log('🎨 Updating dashboard UI with data:', this.dashboardData);
+    if (!this.dashboardData) return;
     
     // Update stat cards
     this.updateElement('stakedBalance', this.dashboardData.stakedBalance.toFixed(2));
@@ -460,17 +436,12 @@ class StakingManager {
     
     // Update claim button
     this.updateClaimButton(this.dashboardData.pendingRewards);
-    
-    console.log('✅ Dashboard UI updated');
   }
 
   updateElement(id, value) {
     const element = document.getElementById(id);
     if (element) {
       element.textContent = value;
-      console.log(`✅ Updated ${id}: ${value}`);
-    } else {
-      console.warn(`❌ Element not found: ${id}`);
     }
   }
 

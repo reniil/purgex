@@ -19,7 +19,7 @@ const CONFIG = {
     explorer: 'https://scan.pulsechain.com',
     currency: { name: 'PLS', symbol: 'PLS', decimals: 18 },
   },
-  PULSEX_SWAP_URL: 'https://pulsex.mypinata.cloud/ipfs/bafybeidea3ibq4lu5t6vk6ihp4iuznjb3wtPrgxkardhmhnqtmcfpdp5m/#/?outputCurrency=0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0',
+  PULSEX_SWAP_URL: 'https://www.dextools.io/app/pulse/pair-explorer/0xc76f9b605a929a35f1a6d8b200630e84e27caaeb',
   REWARDS_PER_SECOND: 6.4,
   SWEEP_FEE_PERCENT: 5,
   PRICE_REFRESH_INTERVAL_MS: 30000,

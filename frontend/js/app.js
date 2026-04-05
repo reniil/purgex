@@ -515,39 +515,6 @@ window.stakingPage = {
         }
       });
     }
-    
-    // Debug buttons
-    const refreshDashboardBtn = document.getElementById('refreshDashboardBtn');
-    if (refreshDashboardBtn) {
-      refreshDashboardBtn.addEventListener('click', async () => {
-        refreshDashboardBtn.disabled = true;
-        refreshDashboardBtn.textContent = '🔄 Refreshing...';
-        
-        try {
-          await window.stakingManager.loadDashboard();
-          window.wallet.showToast('Dashboard refreshed!', 'success');
-        } catch (error) {
-          window.wallet.showToast('Refresh failed: ' + error.message, 'error');
-        } finally {
-          refreshDashboardBtn.disabled = false;
-          refreshDashboardBtn.textContent = '🔄 Refresh Dashboard';
-        }
-      });
-    }
-    
-    const debugStakingBtn = document.getElementById('debugStakingBtn');
-    if (debugStakingBtn) {
-      debugStakingBtn.addEventListener('click', () => {
-        // Load and run debug script
-        const script = document.createElement('script');
-        script.src = '/debug-staking.js';
-        script.onload = () => {
-          console.log('🔍 Running staking debug...');
-          window.debugStaking && window.debugStaking();
-        };
-        document.head.appendChild(script);
-      });
-    }
   }
 };
 
