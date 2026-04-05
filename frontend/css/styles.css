@@ -247,6 +247,38 @@ a:hover {
   background: var(--surface-light);
 }
 
+.btn-connect {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-connect:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-approve-all {
+  background: linear-gradient(135deg, var(--success), #22c55e);
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-approve-all:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-add-token {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-add-token:hover:not(:disabled) {
+  background: var(--surface-light);
+}
+
 .btn-success {
   background: var(--accent);
   color: white;
@@ -1064,6 +1096,11 @@ a:hover {
 /* Page Layout */
 .page {
   padding: var(--space-xl) 0;
+  display: none;
+}
+
+.page.active {
+  display: block;
 }
 
 .page-header {

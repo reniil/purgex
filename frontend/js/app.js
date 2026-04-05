@@ -1,5 +1,5 @@
-// PurgeX Frontend - Main Application Logic
-// Shared utilities, wallet connection, UI updates
+// PurgeX Frontend - Unified Application Logic
+// Complete SPA with routing, wallet connection, and all functionality
 
 class PurgeXApp {
   constructor() {
@@ -7,18 +7,108 @@ class PurgeXApp {
     this.signer = null;
     this.account = null;
     this.contracts = {};
+    this.currentPage = 'home';
+    this.dustSweeper = null;
+    this.stakingManager = null;
     this.init();
   }
 
   async init() {
     this.setupEventListeners();
+    this.setupRouting();
     await this.checkWalletConnection();
     this.loadTheme();
   }
 
+  // Setup SPA routing
+  setupRouting() {
+    // Handle navigation
+    document.addEventListener('click', (e) => {
+      if (e.target.matches('.nav-link[data-page]')) {
+        e.preventDefault();
+        const page = e.target.dataset.page;
+        this.navigateToPage(page);
+      }
+    });
+
+    // Handle browser back/forward
+    window.addEventListener('popstate', (e) => {
+      const page = e.state?.page || 'home';
+      this.navigateToPage(page, false);
+    });
+
+    // Initial page load
+    const hash = window.location.hash.slice(1) || 'home';
+    this.navigateToPage(hash, false);
+  }
+
+  // Navigate to specific page
+  navigateToPage(page, updateHash = true) {
+    // Hide all pages
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    
+    // Show target page
+    const targetPage = document.getElementById(`${page}-page`);
+    if (targetPage) {
+      targetPage.classList.add('active');
+    }
+
+    // Update navigation
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.classList.remove('active');
+      if (link.dataset.page === page) {
+        link.classList.add('active');
+      }
+    });
+
+    // Update browser history
+    if (updateHash) {
+      window.history.pushState({ page }, '', `#${page}`);
+    }
+
+    this.currentPage = page;
+
+    // Initialize page-specific functionality
+    this.initializePage(page);
+  }
+
+  // Initialize page-specific functionality
+  initializePage(page) {
+    switch (page) {
+      case 'home':
+        // Home page initialization (charts, stats already loaded via HTML)
+        break;
+      case 'sweep':
+        this.initializeSweep();
+        break;
+      case 'stake':
+        this.initializeStaking();
+        break;
+      case 'about':
+        // About page content is static, no initialization needed
+        break;
+    }
+  }
+
+  // Initialize sweep functionality
+  initializeSweep() {
+    if (!this.dustSweeper) {
+      this.dustSweeper = new DustSweeper(this);
+      console.log('🧹 Dust Sweeper initialized');
+    }
+  }
+
+  // Initialize staking functionality
+  initializeStaking() {
+    if (!this.stakingManager) {
+      this.stakingManager = new StakingManager(this);
+      console.log('🔒 Staking Manager initialized');
+    }
+  }
+
   // Setup global event listeners
   setupEventListeners() {
-    // Wallet connect button
+    // Wallet connect/disconnect
     document.addEventListener('click', (e) => {
       if (e.target.matches('.connect-wallet-btn, [data-action="connect-wallet"]')) {
         e.preventDefault();
@@ -41,217 +131,126 @@ class PurgeXApp {
       }
     });
 
-    // Add token to wallet
+    // Add token functionality
     document.addEventListener('click', (e) => {
-      if (e.target.matches('.add-token-btn, [data-action="add-token"]')) {
+      if (e.target.matches('.add-custom-token-btn')) {
         e.preventDefault();
-        this.addTokenToWallet();
+        this.addCustomToken();
       }
     });
 
-    // Handle sweep actions
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.sweep-btn, [data-action="sweep"]')) {
-        e.preventDefault();
-        if (window.dustSweeper) {
-          window.dustSweeper.executeSweep();
-        } else {
-          this.showToast('Sweeper not loaded', 'error');
-        }
-      }
-    });
-
-    // Handle select all
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.select-all-btn, [data-action="select-all"]')) {
-        e.preventDefault();
-        if (window.dustSweeper) {
-          window.dustSweeper.toggleSelectAll();
-        }
-      }
-    });
-
-    // Handle add custom token
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('[data-action="add-custom-token"]')) {
-        e.preventDefault();
-        if (window.dustSweeper) {
-          window.dustSweeper.showAddTokenDialog();
-        }
-      }
-    });
-
-    // Handle staking actions
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.stake-btn, [data-action="stake"]')) {
-        e.preventDefault();
-        if (window.stakingDashboard) {
-          window.stakingDashboard.handleStake();
-        }
-      }
-    });
-
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.unstake-btn, [data-action="unstake"]')) {
-        e.preventDefault();
-        if (window.stakingDashboard) {
-          window.stakingDashboard.handleUnstake();
-        }
-      }
-    });
-
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.claim-btn, [data-action="claim"]')) {
-        e.preventDefault();
-        if (window.stakingDashboard) {
-          window.stakingDashboard.handleClaim();
-        }
-      }
-    });
-
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.stake-all-btn, [data-action="stake-all"]')) {
-        e.preventDefault();
-        if (window.stakingDashboard) {
-          window.stakingDashboard.stakeAll();
-        }
-      }
-    });
-
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.unstake-all-btn, [data-action="unstake-all"]')) {
-        e.preventDefault();
-        if (window.stakingDashboard) {
-          window.stakingDashboard.unstakeAll();
-        }
-      }
-    });
-  }
-
-  // Check if wallet is already connected
-  async checkWalletConnection() {
-    if (typeof window.ethereum !== 'undefined') {
-      try {
-        const accounts = await window.ethereum.request({ 
-          method: 'eth_accounts' 
+    // Select all functionality
+    document.addEventListener('change', (e) => {
+      if (e.target.matches('#select-all, #select-all-header')) {
+        const selectAll = e.target.checked;
+        document.querySelectorAll('.token-checkbox').forEach(checkbox => {
+          checkbox.checked = selectAll;
+          checkbox.dispatchEvent(new Event('change'));
         });
-        
-        if (accounts.length > 0) {
-          await this.handleAccountsChanged(accounts);
-        }
-      } catch (error) {
-        console.error('Error checking wallet connection:', error);
       }
+    });
+
+    // Sweep functionality
+    document.addEventListener('click', (e) => {
+      if (e.target.matches('#execute-sweep-btn')) {
+        e.preventDefault();
+        this.executeSweep();
+      }
+    });
+
+    // Staking functionality
+    document.addEventListener('click', (e) => {
+      if (e.target.matches('#stake-btn')) {
+        e.preventDefault();
+        this.stakePRGX();
+      }
+      
+      if (e.target.matches('#unstake-btn')) {
+        e.preventDefault();
+        this.unstakePRGX();
+      }
+      
+      if (e.target.matches('#claim-rewards-btn')) {
+        e.preventDefault();
+        this.claimRewards();
+      }
+    });
+
+    // Approve staking functionality
+    document.addEventListener('click', (e) => {
+      if (e.target.matches('#approve-stake-btn')) {
+        e.preventDefault();
+        this.approveStaking();
+      }
+    });
+  }
+
+  // Execute sweep
+  async executeSweep() {
+    if (this.dustSweeper) {
+      await this.dustSweeper.executeSweep();
     }
   }
 
-  // Connect wallet
-  async connectWallet() {
-    if (typeof window.ethereum === 'undefined') {
-      this.showToast('Please install MetaMask or another Web3 wallet', 'error');
-      return;
+  // Staking functions
+  async stakePRGX() {
+    if (this.stakingManager) {
+      await this.stakingManager.stake();
     }
+  }
 
+  async unstakePRGX() {
+    if (this.stakingManager) {
+      await this.stakingManager.unstake();
+    }
+  }
+
+  async claimRewards() {
+    if (this.stakingManager) {
+      await this.stakingManager.claimRewards();
+    }
+  }
+
+  async approveStaking() {
+    if (this.stakingManager) {
+      await this.stakingManager.approve();
+    }
+  }
+
+  // Wallet connection
+  async connectWallet() {
     try {
-      // Request account access
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts'
-      });
+      if (!window.ethereum) {
+        this.showToast('Please install MetaMask or another Web3 wallet', 'error');
+        return;
+      }
 
-      await this.handleAccountsChanged(accounts);
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       
-      // Check network
-      await this.checkNetwork();
+      if (accounts.length === 0) {
+        this.showToast('No accounts found', 'error');
+        return;
+      }
+
+      // Switch to PulseChain if needed
+      await this.switchToPulseChain();
       
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send('eth_requestAccounts');
+      
+      this.provider = provider;
+      this.signer = await provider.getSigner();
+      this.account = accounts[0];
+      
+      this.updateUI();
       this.showToast('Wallet connected successfully!', 'success');
       
+      // Initialize page functionality after connection
+      this.initializePage(this.currentPage);
+      
     } catch (error) {
-      console.error('Error connecting wallet:', error);
+      console.error('Wallet connection failed:', error);
       this.showToast('Failed to connect wallet', 'error');
-    }
-  }
-
-  // Handle account changes
-  async handleAccountsChanged(accounts) {
-    if (accounts.length === 0) {
-      this.disconnectWallet();
-      return;
-    }
-
-    this.account = accounts[0];
-    
-    // Setup provider and signer (ethers v6 syntax)
-    this.provider = new ethers.BrowserProvider(window.ethereum);
-    this.signer = await this.provider.getSigner();
-    
-    // Initialize contracts
-    this.initContracts();
-    
-    // Update UI
-    this.updateWalletUI();
-    
-    // Save to localStorage
-    localStorage.setItem('purgeX_connected', 'true');
-  }
-
-  // Initialize contract instances
-  initContracts() {
-    const { CONTRACTS } = CONFIG;
-    
-    // ERC20 ABI (minimal)
-    const erc20Abi = [
-      'function balanceOf(address) view returns (uint256)',
-      'function approve(address spender, uint256 amount) returns (bool)',
-      'function allowance(address owner, address spender) view returns (uint256)',
-      'function transfer(address to, uint256 amount) returns (bool)',
-      'function decimals() view returns (uint8)',
-      'function symbol() view returns (string)',
-      'function name() view returns (string)'
-    ];
-
-    this.contracts.PRGX = new ethers.Contract(CONTRACTS.PRGX_TOKEN, erc20Abi, this.signer);
-    
-    // Staking contract ABI
-    const stakingAbi = [
-      'function stake(uint256 amount)',
-      'function withdraw(uint256 amount)',
-      'function claimReward()',
-      'function getStakedBalance(address) view returns (uint256)',
-      'function pendingRewardsOf(address) view returns (uint256)',
-      'function getTotalStaked() view returns (uint256)',
-      'function getRewardRate() view returns (uint256)'
-    ];
-    
-    this.contracts.Staking = new ethers.Contract(CONTRACTS.STAKING, stakingAbi, this.signer);
-  }
-
-  // Check if on correct network
-  async checkNetwork() {
-    try {
-      const chainId = await window.ethereum.request({
-        method: 'eth_chainId'
-      });
-
-      if (chainId !== CONFIG.NETWORK.chainId) {
-        // Try to switch network
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: CONFIG.NETWORK.chainId }]
-          });
-        } catch (switchError) {
-          // Network doesn't exist, add it
-          if (switchError.code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [CONFIG.NETWORK]
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error checking network:', error);
-      this.showToast('Please switch to PulseChain network', 'error');
     }
   }
 
@@ -260,55 +259,121 @@ class PurgeXApp {
     this.provider = null;
     this.signer = null;
     this.account = null;
-    this.contracts = {};
-    
-    localStorage.removeItem('purgeX_connected');
-    this.updateWalletUI();
+    this.updateUI();
     this.showToast('Wallet disconnected', 'info');
   }
 
-  // Update wallet UI
-  updateWalletUI() {
-    const connectBtns = document.querySelectorAll('.connect-wallet-btn');
-    const accountInfo = document.querySelectorAll('.account-info');
-    const addressElements = document.querySelectorAll('.wallet-address');
-
-    if (this.account) {
-      // Show account info, hide connect buttons
-      connectBtns.forEach(btn => btn.style.display = 'none');
-      accountInfo.forEach(info => info.style.display = 'block');
-      
-      // Update address displays
-      const shortAddress = this.formatAddress(this.account);
-      addressElements.forEach(el => {
-        el.textContent = shortAddress;
-        el.setAttribute('title', this.account);
+  // Switch to PulseChain
+  async switchToPulseChain() {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x171' }], // 369 in hex
       });
-
-      // Update sweep page specific elements
-      const sweepConnectPrompt = document.getElementById('sweep-connect-prompt');
-      const sweepWalletConnected = document.getElementById('wallet-connected');
-      const sweepAddress = document.querySelector('#wallet-connected .wallet-address');
-      
-      if (sweepConnectPrompt) sweepConnectPrompt.classList.add('hidden');
-      if (sweepWalletConnected) sweepWalletConnected.classList.remove('hidden');
-      if (sweepAddress) sweepAddress.textContent = shortAddress;
-      
-    } else {
-      // Show connect buttons, hide account info
-      connectBtns.forEach(btn => btn.style.display = 'block');
-      accountInfo.forEach(info => info.style.display = 'none');
-      
-      // Update sweep page specific elements
-      const sweepConnectPrompt = document.getElementById('sweep-connect-prompt');
-      const sweepWalletConnected = document.getElementById('wallet-connected');
-      
-      if (sweepConnectPrompt) sweepConnectPrompt.classList.remove('hidden');
-      if (sweepWalletConnected) sweepWalletConnected.classList.add('hidden');
+    } catch (error) {
+      if (error.code === 4902) {
+        // Chain not added, try to add it
+        await this.addPulseChain();
+      } else {
+        console.error('Failed to switch network:', error);
+        this.showToast('Failed to switch to PulseChain', 'error');
+      }
     }
   }
 
-  // Format address for display
+  // Add PulseChain to MetaMask
+  async addPulseChain() {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: '0x171',
+          chainName: 'PulseChain',
+          nativeCurrency: {
+            name: 'Pulse',
+            symbol: 'PLS',
+            decimals: 18
+          },
+          rpcUrls: ['https://rpc.pulsechain.com'],
+          blockExplorerUrls: ['https://scan.pulsechain.com']
+        }]
+      });
+    } catch (error) {
+      console.error('Failed to add PulseChain:', error);
+      this.showToast('Failed to add PulseChain', 'error');
+    }
+  }
+
+  // Check wallet connection
+  async checkWalletConnection() {
+    if (window.ethereum) {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          this.account = accounts[0];
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          this.provider = provider;
+          this.signer = await provider.getSigner();
+        }
+      } catch (error) {
+        console.error('Failed to check wallet connection:', error);
+      }
+    }
+    this.updateUI();
+  }
+
+  // Update UI based on connection state
+  updateUI() {
+    const connectBtns = document.querySelectorAll('.connect-wallet-btn');
+    const accountInfo = document.querySelectorAll('.account-info');
+    const walletAddresses = document.querySelectorAll('.wallet-address');
+    
+    // Sweep page elements
+    const sweepConnectPrompt = document.getElementById('sweep-connect-prompt');
+    const sweepPanel = document.getElementById('sweep-panel');
+    const prgxCard = document.getElementById('prgx-card');
+    const dustPanel = document.getElementById('dust-panel');
+    
+    // Staking page elements
+    const stakeConnectPrompt = document.getElementById('stake-connect-prompt');
+    const stakingPanel = document.getElementById('staking-panel');
+    
+    if (this.account) {
+      // Show connected state
+      connectBtns.forEach(btn => btn.style.display = 'none');
+      accountInfo.forEach(info => info.style.display = 'flex');
+      walletAddresses.forEach(addr => {
+        addr.textContent = this.formatAddress(this.account);
+        addr.dataset.address = this.account;
+      });
+      
+      // Show sweep panels, hide connect prompts
+      if (sweepConnectPrompt) sweepConnectPrompt.style.display = 'none';
+      if (sweepPanel) sweepPanel.style.display = 'none';
+      if (prgxCard) prgxCard.style.display = 'block';
+      if (dustPanel) dustPanel.style.display = 'block';
+      
+      // Show staking panels, hide connect prompts
+      if (stakeConnectPrompt) stakeConnectPrompt.style.display = 'none';
+      if (stakingPanel) stakingPanel.style.display = 'block';
+      
+    } else {
+      // Show disconnected state
+      connectBtns.forEach(btn => btn.style.display = 'inline-flex');
+      accountInfo.forEach(info => info.style.display = 'none');
+      
+      // Hide all panels, show connect prompts
+      if (sweepConnectPrompt) sweepConnectPrompt.style.display = 'block';
+      if (sweepPanel) sweepPanel.style.display = 'none';
+      if (prgxCard) prgxCard.style.display = 'none';
+      if (dustPanel) dustPanel.style.display = 'none';
+      
+      if (stakeConnectPrompt) stakeConnectPrompt.style.display = 'block';
+      if (stakingPanel) stakingPanel.style.display = 'none';
+    }
+  }
+
+  // Format address
   formatAddress(address) {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -318,85 +383,31 @@ class PurgeXApp {
   async copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
-    } catch (err) {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-  }
-
-  // Add PRGX token to wallet
-  async addTokenToWallet() {
-    if (!this.signer) {
-      this.showToast('Please connect your wallet first', 'error');
-      return;
-    }
-
-    try {
-      await window.ethereum.request({
-        method: 'wallet_watchAsset',
-        params: {
-          type: 'ERC20',
-          options: {
-            address: CONFIG.CONTRACTS.PRGX_TOKEN,
-            symbol: 'PRGX',
-            decimals: 18,
-            image: 'https://raw.githubusercontent.com/reniil/purgex/main/assets/logo.png'
-          }
-        }
-      });
-      
-      this.showToast('PRGX token added to wallet!', 'success');
     } catch (error) {
-      console.error('Error adding token:', error);
-      this.showToast('Failed to add token to wallet', 'error');
+      console.error('Failed to copy to clipboard:', error);
     }
   }
 
   // Show toast notification
   showToast(message, type = 'info') {
+    // Remove existing toast
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+
+    // Create new toast
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
     
+    // Add to page
     document.body.appendChild(toast);
     
-    // Animate in
-    setTimeout(() => toast.classList.add('show'), 100);
-    
-    // Remove after delay
+    // Auto remove after 3 seconds
     setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => document.body.removeChild(toast), 300);
-    }, CONFIG.UI.TOAST_DURATION);
-  }
-
-  // Format token amount safely (ethers v6 syntax)
-  formatAmount(amount, decimals = 18, displayDecimals = 2) {
-    try {
-      if (!amount) return '0';
-      
-      // Handle very small numbers
-      const num = parseFloat(ethers.formatUnits(amount, decimals));
-      
-      if (num === 0) return '0';
-      if (num < 0.000001) return '< 0.000001';
-      if (num < 0.01) return '< 0.01';
-      if (num < 0.1) return num.toFixed(4);
-      if (num < 1) return num.toFixed(3);
-      
-      return num.toLocaleString(undefined, { 
-        minimumFractionDigits: displayDecimals,
-        maximumFractionDigits: displayDecimals 
-      });
-    } catch (error) {
-      console.warn('Format error:', error.message);
-      return '0';
-    }
+      toast.remove();
+    }, 3000);
   }
 
   // Load theme preference
@@ -405,35 +416,35 @@ class PurgeXApp {
     document.body.setAttribute('data-theme', theme);
   }
 
-  // Loading state helper
-  setLoading(element, loading = true) {
-    if (loading) {
-      element.disabled = true;
-      element.dataset.originalText = element.textContent;
-      element.textContent = 'Loading...';
-    } else {
-      element.disabled = false;
-      element.textContent = element.dataset.originalText || element.textContent;
+  // Add custom token
+  async addCustomToken() {
+    const input = document.getElementById('custom-token-address');
+    const address = input.value.trim();
+    
+    if (!address) {
+      this.showToast('Please enter a token address', 'error');
+      return;
     }
-  }
-
-  // Format currency
-  formatCurrency(amount, currency = 'USD') {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(amount);
+    
+    if (!ethers.isAddress(address)) {
+      this.showToast('Invalid token address', 'error');
+      return;
+    }
+    
+    try {
+      if (this.dustSweeper) {
+        await this.dustSweeper.addCustomToken(address);
+        this.showToast('Token added successfully!', 'success');
+        input.value = '';
+      }
+    } catch (error) {
+      console.error('Failed to add token:', error);
+      this.showToast('Failed to add token', 'error');
+    }
   }
 }
 
-// Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  window.purgeXApp = new PurgeXApp();
-});
-
-// Export for use in other modules
+// Export for use in other scripts
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = PurgeXApp;
 } else {
