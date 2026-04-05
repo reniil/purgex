@@ -1,452 +1,585 @@
-// PurgeX Frontend - Unified Application Logic
-// Complete SPA with routing, wallet connection, and all functionality
+// ================================================================
+// APP INITIALIZATION — Main app entry point
+// ================================================================
 
-class PurgeXApp {
+class App {
   constructor() {
-    this.provider = null;
-    this.signer = null;
-    this.account = null;
-    this.contracts = {};
-    this.currentPage = 'home';
-    this.dustSweeper = null;
-    this.stakingManager = null;
-    this.init();
+    this.isInitialized = false;
+    this.modules = new Map();
   }
 
+  // ================================================================
+  // INITIALIZE APPLICATION
+  // ================================================================
   async init() {
-    this.setupEventListeners();
-    this.setupRouting();
-    await this.checkWalletConnection();
-    this.loadTheme();
-  }
-
-  // Setup SPA routing
-  setupRouting() {
-    // Handle navigation
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.nav-link[data-page]')) {
-        e.preventDefault();
-        const page = e.target.dataset.page;
-        this.navigateToPage(page);
-      }
-    });
-
-    // Handle browser back/forward
-    window.addEventListener('popstate', (e) => {
-      const page = e.state?.page || 'home';
-      this.navigateToPage(page, false);
-    });
-
-    // Initial page load
-    const hash = window.location.hash.slice(1) || 'home';
-    this.navigateToPage(hash, false);
-  }
-
-  // Navigate to specific page
-  navigateToPage(page, updateHash = true) {
-    // Hide all pages
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    if (this.isInitialized) return;
     
-    // Show target page
-    const targetPage = document.getElementById(`${page}-page`);
-    if (targetPage) {
-      targetPage.classList.add('active');
-    }
-
-    // Update navigation
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.classList.remove('active');
-      if (link.dataset.page === page) {
-        link.classList.add('active');
-      }
-    });
-
-    // Update browser history
-    if (updateHash) {
-      window.history.pushState({ page }, '', `#${page}`);
-    }
-
-    this.currentPage = page;
-
-    // Initialize page-specific functionality
-    this.initializePage(page);
-  }
-
-  // Initialize page-specific functionality
-  initializePage(page) {
-    switch (page) {
-      case 'home':
-        // Home page initialization (charts, stats already loaded via HTML)
-        break;
-      case 'sweep':
-        this.initializeSweep();
-        break;
-      case 'stake':
-        this.initializeStaking();
-        break;
-      case 'about':
-        // About page content is static, no initialization needed
-        break;
-    }
-  }
-
-  // Initialize sweep functionality
-  initializeSweep() {
-    if (!this.dustSweeper) {
-      this.dustSweeper = new DustSweeper(this);
-      console.log('🧹 Dust Sweeper initialized');
-    }
-  }
-
-  // Initialize staking functionality
-  initializeStaking() {
-    if (!this.stakingManager) {
-      this.stakingManager = new StakingManager(this);
-      console.log('🔒 Staking Manager initialized');
-    }
-  }
-
-  // Setup global event listeners
-  setupEventListeners() {
-    // Wallet connect/disconnect
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.connect-wallet-btn, [data-action="connect-wallet"]')) {
-        e.preventDefault();
-        this.connectWallet();
-      }
-      
-      if (e.target.matches('.disconnect-wallet-btn, [data-action="disconnect-wallet"]')) {
-        e.preventDefault();
-        this.disconnectWallet();
-      }
-    });
-
-    // Copy address functionality
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.copy-address, [data-action="copy"]')) {
-        e.preventDefault();
-        const address = e.target.dataset.address || this.account;
-        this.copyToClipboard(address);
-        this.showToast('Address copied to clipboard!', 'success');
-      }
-    });
-
-    // Add token functionality
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.add-custom-token-btn')) {
-        e.preventDefault();
-        this.addCustomToken();
-      }
-    });
-
-    // Select all functionality
-    document.addEventListener('change', (e) => {
-      if (e.target.matches('#select-all, #select-all-header')) {
-        const selectAll = e.target.checked;
-        document.querySelectorAll('.token-checkbox').forEach(checkbox => {
-          checkbox.checked = selectAll;
-          checkbox.dispatchEvent(new Event('change'));
-        });
-      }
-    });
-
-    // Sweep functionality
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('#execute-sweep-btn')) {
-        e.preventDefault();
-        this.executeSweep();
-      }
-    });
-
-    // Staking functionality
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('#stake-btn')) {
-        e.preventDefault();
-        this.stakePRGX();
-      }
-      
-      if (e.target.matches('#unstake-btn')) {
-        e.preventDefault();
-        this.unstakePRGX();
-      }
-      
-      if (e.target.matches('#claim-rewards-btn')) {
-        e.preventDefault();
-        this.claimRewards();
-      }
-    });
-
-    // Approve staking functionality
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('#approve-stake-btn')) {
-        e.preventDefault();
-        this.approveStaking();
-      }
-    });
-  }
-
-  // Execute sweep
-  async executeSweep() {
-    if (this.dustSweeper) {
-      await this.dustSweeper.executeSweep();
-    }
-  }
-
-  // Staking functions
-  async stakePRGX() {
-    if (this.stakingManager) {
-      await this.stakingManager.stake();
-    }
-  }
-
-  async unstakePRGX() {
-    if (this.stakingManager) {
-      await this.stakingManager.unstake();
-    }
-  }
-
-  async claimRewards() {
-    if (this.stakingManager) {
-      await this.stakingManager.claimRewards();
-    }
-  }
-
-  async approveStaking() {
-    if (this.stakingManager) {
-      await this.stakingManager.approve();
-    }
-  }
-
-  // Wallet connection
-  async connectWallet() {
     try {
-      if (!window.ethereum) {
-        this.showToast('Please install MetaMask or another Web3 wallet', 'error');
-        return;
-      }
-
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      console.log('🚀 Initializing PurgeX application...');
       
-      if (accounts.length === 0) {
-        this.showToast('No accounts found', 'error');
-        return;
-      }
-
-      // Switch to PulseChain if needed
-      await this.switchToPulseChain();
+      // 1. Initialize router first
+      this.modules.set('router', window.router);
+      window.router.init();
       
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send('eth_requestAccounts');
+      // 2. Initialize price oracle and start price fetching
+      this.modules.set('priceOracle', window.priceOracle);
+      window.priceOracle.startAutoRefresh();
       
-      this.provider = provider;
-      this.signer = await provider.getSigner();
-      this.account = accounts[0];
+      // 3. Initialize wallet and attempt auto-reconnect
+      this.modules.set('wallet', window.wallet);
+      await this.initializeWallet();
       
-      this.updateUI();
-      this.showToast('Wallet connected successfully!', 'success');
+      // 4. Setup global wallet event listeners
+      this.setupWalletEventListeners();
       
-      // Initialize page functionality after connection
-      this.initializePage(this.currentPage);
+      // 5. Setup global UI event listeners
+      this.setupUIEventListeners();
+      
+      // 6. Setup global error handler
+      this.setupGlobalErrorHandler();
+      
+      // 7. Setup toast container
+      this.setupToastContainer();
+      
+      this.isInitialized = true;
+      console.log('✅ PurgeX application initialized successfully');
       
     } catch (error) {
-      console.error('Wallet connection failed:', error);
-      this.showToast('Failed to connect wallet', 'error');
+      console.error('❌ App initialization failed:', error);
+      this.showCriticalError(error.message);
     }
   }
 
-  // Disconnect wallet
-  disconnectWallet() {
-    this.provider = null;
-    this.signer = null;
-    this.account = null;
-    this.updateUI();
+  // ================================================================
+  // INITIALIZE WALLET
+  // ================================================================
+  async initializeWallet() {
+    try {
+      // Attempt auto-reconnect
+      const reconnected = await window.wallet.autoReconnect();
+      
+      if (reconnected) {
+        console.log('✅ Wallet auto-reconnected');
+      } else {
+        console.log('ℹ️ No wallet auto-reconnection available');
+      }
+      
+      // Setup wallet listeners
+      window.wallet.addListener((event, data) => {
+        this.handleWalletEvent(event, data);
+      });
+      
+    } catch (error) {
+      console.warn('Wallet initialization warning:', error);
+    }
+  }
+
+  // ================================================================
+  // SETUP WALLET EVENT LISTENERS
+  // ================================================================
+  setupWalletEventListeners() {
+    // Wallet button in navigation
+    const navWalletBtn = document.getElementById('navWalletBtn');
+    if (navWalletBtn) {
+      navWalletBtn.addEventListener('click', () => {
+        if (window.wallet.isConnected) {
+          window.wallet.disconnect();
+        } else {
+          window.wallet.connect();
+        }
+      });
+    }
+
+    // Mobile menu toggle
+    const hamburger = document.getElementById('hamburger');
+    const navbarLinks = document.getElementById('navbarLinks');
+    
+    if (hamburger && navbarLinks) {
+      hamburger.addEventListener('click', () => {
+        navbarLinks.classList.toggle('open');
+      });
+    }
+
+    // Close mobile menu when link is clicked
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        navbarLinks.classList.remove('open');
+      });
+    });
+  }
+
+  // ================================================================
+  // SETUP UI EVENT LISTENERS
+  // ================================================================
+  setupUIEventListeners() {
+    // Modal overlay click to close
+    const modalOverlay = document.getElementById('modalOverlay');
+    if (modalOverlay) {
+      modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+          modalOverlay.classList.add('hidden');
+        }
+      });
+    }
+
+    // Escape key to close modals
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modalOverlay = document.getElementById('modalOverlay');
+        if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
+          modalOverlay.classList.add('hidden');
+        }
+      }
+    });
+
+    // Copy to clipboard functionality
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('copy-btn')) {
+        this.copyToClipboard(e.target);
+      }
+    });
+  }
+
+  // ================================================================
+  // SETUP GLOBAL ERROR HANDLER
+  // ================================================================
+  setupGlobalErrorHandler() {
+    window.addEventListener('error', (event) => {
+      console.error('Global error:', event.error);
+      this.showToast('An unexpected error occurred', 'error');
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Unhandled promise rejection:', event.reason);
+      this.showToast('An unexpected error occurred', 'error');
+    });
+  }
+
+  // ================================================================
+  // SETUP TOAST CONTAINER
+  // ================================================================
+  setupToastContainer() {
+    const container = document.getElementById('toastContainer');
+    if (!container) {
+      console.warn('Toast container not found');
+    }
+  }
+
+  // ================================================================
+  // WALLET EVENT HANDLER
+  // ================================================================
+  handleWalletEvent(event, data) {
+    switch (event) {
+      case 'connected':
+        console.log('Wallet connected:', data);
+        this.onWalletConnected(data);
+        break;
+      case 'disconnected':
+        console.log('Wallet disconnected');
+        this.onWalletDisconnected();
+        break;
+      case 'accountChanged':
+        console.log('Account changed:', data);
+        this.onAccountChanged(data);
+        break;
+      case 'chainChanged':
+        console.log('Chain changed:', data);
+        this.onChainChanged(data);
+        break;
+    }
+  }
+
+  // ================================================================
+  // WALLET EVENT CALLBACKS
+  // ================================================================
+  async onWalletConnected(data) {
+    // Update wallet UI immediately
+    window.wallet.updateAllWalletUI();
+    
+    // Refresh current page if it requires wallet
+    const currentRoute = window.router.getCurrentRoute();
+    if (currentRoute && currentRoute.requiresWallet) {
+      await window.router.handleRoute();
+    }
+    
+    this.showToast('Wallet connected successfully', 'success');
+  }
+
+  async onWalletDisconnected() {
+    // Navigate to home if on wallet-required page
+    const currentRoute = window.router.getCurrentRoute();
+    if (currentRoute && currentRoute.requiresWallet) {
+      window.router.navigate('/');
+    }
+    
     this.showToast('Wallet disconnected', 'info');
   }
 
-  // Switch to PulseChain
-  async switchToPulseChain() {
-    try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x171' }], // 369 in hex
-      });
-    } catch (error) {
-      if (error.code === 4902) {
-        // Chain not added, try to add it
-        await this.addPulseChain();
-      } else {
-        console.error('Failed to switch network:', error);
-        this.showToast('Failed to switch to PulseChain', 'error');
-      }
-    }
+  async onAccountChanged(data) {
+    // Refresh current page to update with new account
+    await window.router.handleRoute();
+    this.showToast('Account changed', 'info');
   }
 
-  // Add PulseChain to MetaMask
-  async addPulseChain() {
-    try {
-      await window.ethereum.request({
-        method: 'wallet_addEthereumChain',
-        params: [{
-          chainId: '0x171',
-          chainName: 'PulseChain',
-          nativeCurrency: {
-            name: 'Pulse',
-            symbol: 'PLS',
-            decimals: 18
-          },
-          rpcUrls: ['https://rpc.pulsechain.com'],
-          blockExplorerUrls: ['https://scan.pulsechain.com']
-        }]
-      });
-    } catch (error) {
-      console.error('Failed to add PulseChain:', error);
-      this.showToast('Failed to add PulseChain', 'error');
-    }
-  }
-
-  // Check wallet connection
-  async checkWalletConnection() {
-    if (window.ethereum) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          this.account = accounts[0];
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          this.provider = provider;
-          this.signer = await provider.getSigner();
-        }
-      } catch (error) {
-        console.error('Failed to check wallet connection:', error);
-      }
-    }
-    this.updateUI();
-  }
-
-  // Update UI based on connection state
-  updateUI() {
-    const connectBtns = document.querySelectorAll('.connect-wallet-btn');
-    const accountInfo = document.querySelectorAll('.account-info');
-    const walletAddresses = document.querySelectorAll('.wallet-address');
+  async onChainChanged(data) {
+    // Refresh current page to update with new chain
+    await window.router.handleRoute();
     
-    // Sweep page elements
-    const sweepConnectPrompt = document.getElementById('sweep-connect-prompt');
-    const sweepPanel = document.getElementById('sweep-panel');
-    const prgxCard = document.getElementById('prgx-card');
-    const dustPanel = document.getElementById('dust-panel');
-    
-    // Staking page elements
-    const stakeConnectPrompt = document.getElementById('stake-connect-prompt');
-    const stakingPanel = document.getElementById('staking-panel');
-    
-    if (this.account) {
-      // Show connected state
-      connectBtns.forEach(btn => btn.style.display = 'none');
-      accountInfo.forEach(info => info.style.display = 'flex');
-      walletAddresses.forEach(addr => {
-        addr.textContent = this.formatAddress(this.account);
-        addr.dataset.address = this.account;
-      });
-      
-      // Show sweep panels, hide connect prompts
-      if (sweepConnectPrompt) sweepConnectPrompt.style.display = 'none';
-      if (sweepPanel) sweepPanel.style.display = 'none';
-      if (prgxCard) prgxCard.style.display = 'block';
-      if (dustPanel) dustPanel.style.display = 'block';
-      
-      // Show staking panels, hide connect prompts
-      if (stakeConnectPrompt) stakeConnectPrompt.style.display = 'none';
-      if (stakingPanel) stakingPanel.style.display = 'block';
-      
+    if (data.chainId === CONFIG.NETWORK.chainId) {
+      this.showToast('Switched to PulseChain', 'success');
     } else {
-      // Show disconnected state
-      connectBtns.forEach(btn => btn.style.display = 'inline-flex');
-      accountInfo.forEach(info => info.style.display = 'none');
-      
-      // Hide all panels, show connect prompts
-      if (sweepConnectPrompt) sweepConnectPrompt.style.display = 'block';
-      if (sweepPanel) sweepPanel.style.display = 'none';
-      if (prgxCard) prgxCard.style.display = 'none';
-      if (dustPanel) dustPanel.style.display = 'none';
-      
-      if (stakeConnectPrompt) stakeConnectPrompt.style.display = 'block';
-      if (stakingPanel) stakingPanel.style.display = 'none';
+      this.showToast('Wrong network detected', 'warning');
     }
   }
 
-  // Format address
-  formatAddress(address) {
-    if (!address) return '';
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  }
-
-  // Copy to clipboard
-  async copyToClipboard(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
-    }
-  }
-
-  // Show toast notification
+  // ================================================================
+  // UTILITY METHODS
+  // ================================================================
   showToast(message, type = 'info') {
-    // Remove existing toast
-    const existingToast = document.querySelector('.toast');
-    if (existingToast) {
-      existingToast.remove();
+    if (window.wallet && window.wallet.showToast) {
+      window.wallet.showToast(message, type);
+    } else {
+      console.log(`Toast (${type}): ${message}`);
     }
-
-    // Create new toast
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.textContent = message;
-    
-    // Add to page
-    document.body.appendChild(toast);
-    
-    // Auto remove after 3 seconds
-    setTimeout(() => {
-      toast.remove();
-    }, 3000);
   }
 
-  // Load theme preference
-  loadTheme() {
-    const theme = localStorage.getItem('purgeX_theme') || 'dark';
-    document.body.setAttribute('data-theme', theme);
-  }
-
-  // Add custom token
-  async addCustomToken() {
-    const input = document.getElementById('custom-token-address');
-    const address = input.value.trim();
-    
-    if (!address) {
-      this.showToast('Please enter a token address', 'error');
-      return;
-    }
-    
-    if (!ethers.isAddress(address)) {
-      this.showToast('Invalid token address', 'error');
-      return;
-    }
+  async copyToClipboard(element) {
+    const textToCopy = element.dataset.copy || element.textContent;
     
     try {
-      if (this.dustSweeper) {
-        await this.dustSweeper.addCustomToken(address);
-        this.showToast('Token added successfully!', 'success');
-        input.value = '';
-      }
+      await navigator.clipboard.writeText(textToCopy);
+      
+      // Show feedback
+      const originalText = element.textContent;
+      element.textContent = 'Copied!';
+      element.classList.add('success');
+      
+      setTimeout(() => {
+        element.textContent = originalText;
+        element.classList.remove('success');
+      }, 2000);
+      
     } catch (error) {
-      console.error('Failed to add token:', error);
-      this.showToast('Failed to add token', 'error');
+      console.error('Copy to clipboard failed:', error);
+      this.showToast('Failed to copy to clipboard', 'error');
     }
+  }
+
+  showCriticalError(message) {
+    const appContainer = document.getElementById('app');
+    if (!appContainer) return;
+    
+    appContainer.innerHTML = `
+      <div class="section">
+        <div class="container">
+          <div class="card" style="text-align: center; padding: 3rem; border-color: var(--red);">
+            <h3 style="color: var(--red); margin-bottom: 1rem;">Critical Error</h3>
+            <p style="color: var(--text-2); margin-bottom: 2rem;">
+              The application failed to initialize properly.
+            </p>
+            <p style="color: var(--text-3); font-family: var(--font-mono); margin-bottom: 2rem;">
+              ${message}
+            </p>
+            <button class="btn-primary" onclick="location.reload()">
+              Reload Application
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ================================================================
+  // GET MODULE
+  // ================================================================
+  getModule(name) {
+    return this.modules.get(name);
+  }
+
+  // ================================================================
+  // CLEANUP
+  // ================================================================
+  cleanup() {
+    // Stop price oracle
+    if (window.priceOracle) {
+      window.priceOracle.cleanup();
+    }
+    
+    // Stop staking manager
+    if (window.stakingManager) {
+      window.stakingManager.cleanup();
+    }
+    
+    this.isInitialized = false;
   }
 }
 
-// Export for use in other scripts
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = PurgeXApp;
-} else {
-  window.PurgeXApp = PurgeXApp;
-}
+// ================================================================
+// PAGE INITIALIZERS
+// ================================================================
+
+// Home page
+window.homePage = {
+  async init() {
+    console.log('Home page initialized');
+    
+    // Update wallet UI
+    if (window.wallet) {
+      window.wallet.updateAllWalletUI();
+    }
+    
+    // Load live stats, setup animations, etc.
+  }
+};
+
+// Sweep page
+window.sweepPage = {
+  async init() {
+    console.log('Sweep page initialized');
+    
+    // Update wallet UI first
+    if (window.wallet) {
+      window.wallet.updateAllWalletUI();
+    }
+    
+    if (window.wallet?.isConnected) {
+      // Start token discovery
+      try {
+        await window.tokenDiscovery.getWalletTokens(window.wallet.address);
+        window.tokenDiscovery.renderTokenTable(
+          window.tokenDiscovery.discoveredTokens, 
+          'tokenTableBody'
+        );
+      } catch (error) {
+        console.error('Token discovery failed:', error);
+      }
+    }
+    
+    // Setup select all checkbox
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) {
+      selectAll.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          window.tokenDiscovery.selectAll();
+        } else {
+          window.tokenDiscovery.deselectAll();
+        }
+      });
+    }
+  }
+};
+
+// Staking page
+window.stakingPage = {
+  async init() {
+    console.log('Staking page initialized');
+    
+    // Update wallet UI first
+    if (window.wallet) {
+      window.wallet.updateAllWalletUI();
+    }
+    
+    if (window.wallet?.isConnected) {
+      await window.stakingManager.loadDashboard();
+    }
+    
+    // Setup staking event listeners
+    this.setupEventListeners();
+  },
+  
+  setupEventListeners() {
+    // Stake button
+    const stakeBtn = document.getElementById('stakeBtn');
+    if (stakeBtn) {
+      stakeBtn.addEventListener('click', async () => {
+        try {
+          const amountInput = document.getElementById('stakeAmount');
+          const amount = amountInput.value;
+          
+          if (!amount || parseFloat(amount) <= 0) {
+            window.wallet.showToast('Please enter a valid amount', 'error');
+            return;
+          }
+          
+          // Disable button during transaction
+          stakeBtn.disabled = true;
+          stakeBtn.textContent = '🔄 Staking...';
+          
+          await window.stakingManager.stake(amount);
+          
+          // Clear input and reset button
+          amountInput.value = '';
+          stakeBtn.textContent = '🔒 Stake PRGX';
+          
+        } catch (error) {
+          console.error('Stake failed:', error);
+          window.wallet.showToast(error.message, 'error');
+          
+          // Reset button
+          stakeBtn.disabled = false;
+          stakeBtn.textContent = '🔒 Stake PRGX';
+        } finally {
+          stakeBtn.disabled = false;
+        }
+      });
+    }
+    
+    // Unstake button
+    const unstakeBtn = document.getElementById('unstakeBtn');
+    if (unstakeBtn) {
+      unstakeBtn.addEventListener('click', async () => {
+        try {
+          const amountInput = document.getElementById('unstakeAmount');
+          const amount = amountInput.value;
+          
+          if (!amount || parseFloat(amount) <= 0) {
+            window.wallet.showToast('Please enter a valid amount', 'error');
+            return;
+          }
+          
+          // Disable button during transaction
+          unstakeBtn.disabled = true;
+          unstakeBtn.textContent = '🔄 Unstaking...';
+          
+          await window.stakingManager.unstake(amount);
+          
+          // Clear input and reset button
+          amountInput.value = '';
+          unstakeBtn.textContent = '🔓 Unstake PRGX';
+          
+        } catch (error) {
+          console.error('Unstake failed:', error);
+          window.wallet.showToast(error.message, 'error');
+          
+          // Reset button
+          unstakeBtn.disabled = false;
+          unstakeBtn.textContent = '🔓 Unstake PRGX';
+        } finally {
+          unstakeBtn.disabled = false;
+        }
+      });
+    }
+    
+    // Claim button
+    const claimBtn = document.getElementById('claimBtn');
+    if (claimBtn) {
+      claimBtn.addEventListener('click', async () => {
+        try {
+          // Disable button during transaction
+          claimBtn.disabled = true;
+          claimBtn.textContent = '🔄 Claiming...';
+          
+          await window.stakingManager.claimRewards();
+          
+          // Reset button
+          claimBtn.textContent = '💎 Claim Rewards';
+          
+        } catch (error) {
+          console.error('Claim failed:', error);
+          window.wallet.showToast(error.message, 'error');
+          
+          // Reset button
+          claimBtn.disabled = false;
+          claimBtn.textContent = '💎 Claim Rewards';
+        } finally {
+          // Button will be re-enabled by dashboard update
+        }
+      });
+    }
+    
+    // Max stake button
+    const maxStakeBtn = document.getElementById('maxStakeBtn');
+    if (maxStakeBtn) {
+      maxStakeBtn.addEventListener('click', () => {
+        const walletPRGXElement = document.getElementById('walletPRGX');
+        const stakeAmountInput = document.getElementById('stakeAmount');
+        
+        if (walletPRGXElement && stakeAmountInput) {
+          const balance = walletPRGXElement.textContent.replace(' PRGX', '');
+          stakeAmountInput.value = balance;
+        }
+      });
+    }
+    
+    // Max unstake button
+    const maxUnstakeBtn = document.getElementById('maxUnstakeBtn');
+    if (maxUnstakeBtn) {
+      maxUnstakeBtn.addEventListener('click', () => {
+        const stakedDisplayElement = document.getElementById('stakedDisplay');
+        const unstakeAmountInput = document.getElementById('unstakeAmount');
+        
+        if (stakedDisplayElement && unstakeAmountInput) {
+          const balance = stakedDisplayElement.textContent.replace(' PRGX', '');
+          unstakeAmountInput.value = balance;
+        }
+      });
+    }
+  }
+};
+
+// Tokenomics page
+window.tokenomicsPage = {
+  async init() {
+    console.log('Tokenomics page initialized');
+    
+    // Update wallet UI
+    if (window.wallet) {
+      window.wallet.updateAllWalletUI();
+    }
+    
+    // Setup charts, animations, etc.
+  }
+};
+
+// Contracts page
+window.contractsPage = {
+  async init() {
+    console.log('Contracts page initialized');
+    
+    // Update wallet UI
+    if (window.wallet) {
+      window.wallet.updateAllWalletUI();
+    }
+    
+    // Setup contract verification display
+  }
+};
+
+// About page
+window.aboutPage = {
+  async init() {
+    console.log('About page initialized');
+    
+    // Update wallet UI
+    if (window.wallet) {
+      window.wallet.updateAllWalletUI();
+    }
+    
+    // Setup team display, roadmap, etc.
+  }
+};
+
+// ================================================================
+// GLOBAL APP INSTANCE
+// ================================================================
+
+window.app = new App();
+
+// ================================================================
+// DOM READY - START APPLICATION
+// ================================================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await window.app.init();
+});
+
+// ================================================================
+// CLEANUP ON PAGE UNLOAD
+// ================================================================
+
+window.addEventListener('beforeunload', () => {
+  if (window.app) {
+    window.app.cleanup();
+  }
+});

@@ -1,435 +1,499 @@
-// PurgeX Frontend - Staking Dashboard Logic
-// Staking, unstaking, and reward claiming functionality
+// ================================================================
+// STAKING MANAGER — Staking dashboard with live reward counter
+// ================================================================
 
-class StakingDashboard {
-  constructor(app) {
-    this.app = app;
-    this.refreshInterval = null;
-    this.init();
+class StakingManager {
+  constructor() {
+    this.dashboardData = null;
+    this.rewardCounterInterval = null;
+    this.pendingRewardsStart = 0;
+    this.userStakeFraction = 0;
   }
 
-  init() {
-    this.setupEventListeners();
-    this.loadStakingData();
-    this.startAutoRefresh();
-  }
-
-  setupEventListeners() {
-    // Stake button
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.stake-btn, [data-action="stake"]')) {
-        this.handleStake();
-      }
-    });
-
-    // Unstake button
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.unstake-btn, [data-action="unstake"]')) {
-        this.handleUnstake();
-      }
-    });
-
-    // Claim rewards button
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.claim-btn, [data-action="claim"]')) {
-        this.handleClaimRewards();
-      }
-    });
-
-    // Stake all button
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.stake-all-btn, [data-action="stake-all"]')) {
-        this.stakeAll();
-      }
-    });
-
-    // Unstake all button
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.unstake-all-btn, [data-action="unstake-all"]')) {
-        this.unstakeAll();
-      }
-    });
-
-    // Refresh button
-    document.addEventListener('click', (e) => {
-      if (e.target.matches('.refresh-staking-btn, [data-action="refresh-staking"]')) {
-        this.loadStakingData();
-      }
-    });
-
-    // Input validation
-    document.addEventListener('input', (e) => {
-      if (e.target.matches('.stake-input, .unstake-input')) {
-        this.validateInput(e.target);
-      }
-    });
-  }
-
-  // Load staking data
-  async loadStakingData() {
-    if (!this.app.signer) {
-      this.updateStakingUI(null);
+  // ================================================================
+  // LOAD DASHBOARD DATA
+  // ================================================================
+  async loadDashboard() {
+    if (!window.wallet?.isConnected) {
+      this.showDisconnectedState();
       return;
     }
-
+    
     try {
-      const data = await this.fetchStakingData();
-      this.updateStakingUI(data);
-    } catch (error) {
-      console.error('Error loading staking data:', error);
-      this.app.showToast('Failed to load staking data', 'error');
-    }
-  }
-
-  // Fetch staking data from contracts
-  async fetchStakingData() {
-    const account = this.app.account;
-    const stakingContract = this.app.contracts.Staking;
-    const prgxContract = this.app.contracts.PRGX;
-
-    const [
-      userStaked,
-      pendingRewards,
-      totalStaked,
-      rewardRate,
-      userBalance
-    ] = await Promise.all([
-      stakingContract.getStakedBalance(account),
-      stakingContract.pendingRewardsOf(account),
-      stakingContract.getTotalStaked(),
-      stakingContract.getRewardRate(),
-      prgxContract.balanceOf(account)
-    ]);
-
-    return {
-      userStaked,
-      pendingRewards,
-      totalStaked,
-      rewardRate,
-      userBalance,
-      apr: this.calculateAPR(totalStaked, rewardRate)
-    };
-  }
-
-  // Calculate APR (ethers v6 syntax with safe formatting)
-  calculateAPR(totalStaked, rewardRate) {
-    if (!totalStaked || totalStaked.toString() === '0') return 0;
-    
-    const rewardsPerYear = parseFloat(this.safeFormatUnits(rewardRate, 18)) * 60 * 60 * 24 * 365;
-    const totalStakedAmount = parseFloat(this.safeFormatUnits(totalStaked, 18));
-    
-    return ((rewardsPerYear / totalStakedAmount) * 100).toFixed(2);
-  }
-
-  // Update staking UI
-  updateStakingUI(data) {
-    if (!data) {
-      // Not connected
-      document.querySelectorAll('.staking-data').forEach(el => {
-        el.textContent = '--';
-      });
-      return;
-    }
-
-    // Update stats cards
-    this.updateElement('.user-staked', this.app.formatAmount(data.userStaked, 18, 4) + ' PRGX');
-    this.updateElement('.pending-rewards', this.app.formatAmount(data.pendingRewards, 18, 4) + ' PRGX');
-    this.updateElement('.total-staked', this.app.formatAmount(data.totalStaked, 18, 0) + ' PRGX');
-    this.updateElement('.reward-rate', CONFIG.STAKING.REWARD_RATE + ' PRGX/sec');
-    this.updateElement('.apr', data.apr + '%');
-    this.updateElement('.user-balance', this.app.formatAmount(data.userBalance, 18, 4) + ' PRGX');
-    this.updateElement('.user-staked-hint', this.app.formatAmount(data.userStaked, 18, 4) + ' PRGX');
-
-    // Update button states
-    this.updateButtonStates(data);
-
-    // Update progress bars
-    this.updateProgressBars(data);
-
-    // Update input max values
-    const stakeInput = document.querySelector('.stake-input');
-    const unstakeInput = document.querySelector('.unstake-input');
-    
-    if (stakeInput) {
-      const maxStake = parseFloat(this.safeFormatUnits(data.userBalance, 18)).toFixed(4);
-      stakeInput.max = maxStake;
-    }
-    
-    if (unstakeInput) {
-      const maxUnstake = parseFloat(this.safeFormatUnits(data.userStaked, 18)).toFixed(4);
-      unstakeInput.max = maxUnstake;
-    }
-  }
-
-  // Update element safely
-  updateElement(selector, content) {
-    const element = document.querySelector(selector);
-    if (element) {
-      element.textContent = content;
-    }
-  }
-
-  // Update button states
-  updateButtonStates(data) {
-    const stakeBtn = document.querySelector('.stake-btn');
-    const unstakeBtn = document.querySelector('.unstake-btn');
-    const claimBtn = document.querySelector('.claim-btn');
-
-    if (stakeBtn) {
-      stakeBtn.disabled = !data.userBalance || data.userBalance.toString() === '0';
-    }
-
-    if (unstakeBtn) {
-      unstakeBtn.disabled = !data.userStaked || data.userStaked.toString() === '0';
-    }
-
-    if (claimBtn) {
-      claimBtn.disabled = !data.pendingRewards || data.pendingRewards.toString() === '0';
-    }
-  }
-
-  // Update progress bars
-  updateProgressBars(data) {
-    // User's share of total staked (ethers v6 syntax with safe formatting)
-    const userSharePercent = data.totalStaked && data.totalStaked.toString() !== '0' ? 
-      (parseFloat(this.safeFormatUnits(data.userStaked, 18)) / 
-       parseFloat(this.safeFormatUnits(data.totalStaked, 18))) * 100 : 0;
-
-    const progressBar = document.querySelector('.user-share-progress');
-    if (progressBar) {
-      progressBar.style.width = userSharePercent + '%';
-      progressBar.setAttribute('aria-valuenow', userSharePercent);
-    }
-
-    // Rewards progress (mock) (ethers v6 syntax with safe formatting)
-    const rewardsProgress = document.querySelector('.rewards-progress');
-    if (rewardsProgress) {
-      const rewardsPercent = Math.min((parseFloat(this.safeFormatUnits(data.pendingRewards, 18)) * 100), 100);
-      rewardsProgress.style.width = rewardsPercent + '%';
-      rewardsProgress.setAttribute('aria-valuenow', rewardsPercent);
-    }
-  }
-
-  // Handle staking
-  async handleStake() {
-    if (!this.app.signer) {
-      this.app.showToast('Please connect your wallet first', 'error');
-      return;
-    }
-
-    const input = document.querySelector('.stake-input');
-    const amount = input?.value;
-
-    if (!amount || parseFloat(amount) <= 0) {
-      this.app.showToast('Please enter a valid amount', 'error');
-      return;
-    }
-
-    const stakeBtn = document.querySelector('.stake-btn');
-    this.app.setLoading(stakeBtn, true);
-
-    try {
-      const amountWei = ethers.parseUnits(amount, 18);
+      this.updateStatusLog('📊 Loading staking dashboard...', 'info');
       
-      // First approve PRGX spending
-      this.app.showToast('Approving PRGX...', 'info');
+      const provider = window.wallet.provider;
+      const userAddress = window.wallet.address;
       
-      const approveTx = await this.app.contracts.PRGX.approve(
-        CONFIG.CONTRACTS.STAKING, 
-        amountWei
+      // Create contract instances
+      const stakingContract = new ethers.Contract(
+        CONFIG.CONTRACTS.STAKING,
+        CONFIG.ABIS.STAKING,
+        provider
       );
-      await approveTx.wait();
-
-      // Then stake
-      this.app.showToast('Staking PRGX...', 'info');
       
-      const stakeTx = await this.app.contracts.Staking.stake(amountWei);
-      await stakeTx.wait();
-
-      this.app.showToast(`Successfully staked ${amount} PRGX! 🎉`, 'success');
+      const prgxContract = new ethers.Contract(
+        CONFIG.CONTRACTS.PRGX_TOKEN,
+        CONFIG.ABIS.ERC20,
+        provider
+      );
       
-      // Clear input and refresh data
-      if (input) input.value = '';
-      await this.loadStakingData();
-
+      // Fetch all data in parallel with error handling
+      const results = await Promise.allSettled([
+        stakingContract.stakedBalance(userAddress),
+        stakingContract.pendingRewards(userAddress),
+        stakingContract.totalStaked(),
+        stakingContract.rewardRate(),
+        prgxContract.balanceOf(userAddress),
+        window.priceOracle?.fetchPRGXPrice() || Promise.resolve(0)
+      ]);
+      
+      // Extract results, using fallbacks for failed calls
+      const stakedBalance = results[0].status === 'fulfilled' ? results[0].value : 0n;
+      const pendingRewards = results[1].status === 'fulfilled' ? results[1].value : 0n;
+      const totalStaked = results[2].status === 'fulfilled' ? results[2].value : 0n;
+      const rewardRate = results[3].status === 'fulfilled' ? results[3].value : 0n;
+      const walletBalance = results[4].status === 'fulfilled' ? results[4].value : 0n;
+      const prgxPrice = results[5].status === 'fulfilled' ? results[5].value : 0;
+      
+      // Format data
+      this.dashboardData = {
+        stakedBalance: Number(ethers.formatEther(stakedBalance)),
+        pendingRewards: Number(ethers.formatEther(pendingRewards)),
+        totalStaked: Number(ethers.formatEther(totalStaked)),
+        rewardRate: Number(ethers.formatEther(rewardRate)),
+        walletBalance: Number(ethers.formatEther(walletBalance)),
+        prgxPrice: prgxPrice
+      };
+      
+      // Calculate APR
+      const apr = this.calculateAPR(this.dashboardData.rewardRate, this.dashboardData.totalStaked);
+      this.dashboardData.apr = apr;
+      
+      // Update UI
+      this.updateDashboardUI();
+      
+      // Start live reward counter
+      this.startLiveRewardCounter(this.dashboardData.pendingRewards);
+      
+      this.updateStatusLog('✅ Dashboard loaded', 'success');
+      
     } catch (error) {
-      console.error('Staking failed:', error);
-      this.app.showToast('Staking failed: ' + error.message, 'error');
-    } finally {
-      this.app.setLoading(stakeBtn, false);
+      console.error('Dashboard load failed:', error);
+      this.updateStatusLog(`❌ Failed to load dashboard: ${error.message}`, 'error');
+      
+      // Show demo data if contracts don't exist
+      this.showDemoData();
+      window.wallet.showToast('Using demo data - contracts not deployed yet', 'info');
     }
   }
 
-  // Handle unstaking
-  async handleUnstake() {
-    if (!this.app.signer) {
-      this.app.showToast('Please connect your wallet first', 'error');
+  // ================================================================
+  // SHOW DEMO DATA (for when contracts aren't deployed)
+  // ================================================================
+  showDemoData() {
+    this.dashboardData = {
+      stakedBalance: 0,
+      pendingRewards: 0,
+      totalStaked: 0,
+      rewardRate: CONFIG.REWARDS_PER_SECOND,
+      walletBalance: 0,
+      prgxPrice: 0.000008943,
+      apr: 0
+    };
+    
+    this.updateDashboardUI();
+    this.updateStatusLog('📊 Showing demo data', 'info');
+  }
+
+  // ================================================================
+  // CALCULATE APR
+  // ================================================================
+  calculateAPR(rewardRatePerSec, totalStaked) {
+    if (totalStaked === 0) return 0;
+    
+    // Formula: (rewardRate * seconds_in_year / totalStaked) * 100
+    const secondsInYear = 31536000; // 365 * 24 * 60 * 60
+    const yearlyRewards = rewardRatePerSec * secondsInYear;
+    const apr = (yearlyRewards / totalStaked) * 100;
+    
+    return apr;
+  }
+
+  // ================================================================
+  // LIVE REWARD COUNTER
+  // ================================================================
+  startLiveRewardCounter(initialRewards) {
+    // Clear existing interval
+    if (this.rewardCounterInterval) {
+      clearInterval(this.rewardCounterInterval);
+    }
+    
+    if (!this.dashboardData || this.dashboardData.totalStaked === 0) {
       return;
     }
-
-    const input = document.querySelector('.unstake-input');
-    const amount = input?.value;
-
-    if (!amount || parseFloat(amount) <= 0) {
-      this.app.showToast('Please enter a valid amount', 'error');
-      return;
-    }
-
-    const unstakeBtn = document.querySelector('.unstake-btn');
-    this.app.setLoading(unstakeBtn, true);
-
-    try {
-      const amountWei = ethers.parseUnits(amount, 18);
+    
+    // Calculate user's share of rewards
+    this.userStakeFraction = this.dashboardData.stakedBalance / this.dashboardData.totalStaked;
+    this.pendingRewardsStart = initialRewards;
+    const startTime = Date.now();
+    
+    // Update counter every second
+    this.rewardCounterInterval = setInterval(() => {
+      const elapsedSeconds = (Date.now() - startTime) / 1000;
+      const accruedRewards = elapsedSeconds * this.dashboardData.rewardRate * this.userStakeFraction;
+      const currentRewards = this.pendingRewardsStart + accruedRewards;
       
-      this.app.showToast('Unstaking PRGX...', 'info');
+      // Update display
+      const counter = document.getElementById('pendingRewards');
+      if (counter) {
+        counter.textContent = currentRewards.toFixed(4);
+      }
       
-      const unstakeTx = await this.app.contracts.Staking.withdraw(amountWei);
-      await unstakeTx.wait();
+      // Update claim button
+      this.updateClaimButton(currentRewards);
+    }, 1000);
+  }
 
-      this.app.showToast(`Successfully unstaked ${amount} PRGX! 🎉`, 'success');
-      
-      // Clear input and refresh data
-      if (input) input.value = '';
-      await this.loadStakingData();
-
-    } catch (error) {
-      console.error('Unstaking failed:', error);
-      this.app.showToast('Unstaking failed: ' + error.message, 'error');
-    } finally {
-      this.app.setLoading(unstakeBtn, false);
+  stopLiveRewardCounter() {
+    if (this.rewardCounterInterval) {
+      clearInterval(this.rewardCounterInterval);
+      this.rewardCounterInterval = null;
     }
   }
 
-  // Handle claiming rewards
-  async handleClaimRewards() {
-    if (!this.app.signer) {
-      this.app.showToast('Please connect your wallet first', 'error');
-      return;
+  // ================================================================
+  // STAKE PRGX
+  // ================================================================
+  async stake(amountPRGX) {
+    if (!window.wallet?.isConnected) {
+      throw new Error('Wallet not connected');
     }
-
-    const claimBtn = document.querySelector('.claim-btn');
-    this.app.setLoading(claimBtn, true);
-
+    
+    if (!amountPRGX || parseFloat(amountPRGX) <= 0) {
+      throw new Error('Invalid stake amount');
+    }
+    
+    if (!this.dashboardData) {
+      throw new Error('Dashboard data not loaded');
+    }
+    
+    if (parseFloat(amountPRGX) > this.dashboardData.walletBalance) {
+      throw new Error('Insufficient PRGX balance');
+    }
+    
     try {
-      this.app.showToast('Claiming rewards...', 'info');
+      this.updateStatusLog('📝 Checking PRGX approval...', 'info');
       
-      const claimTx = await this.app.contracts.Staking.claimReward();
-      await claimTx.wait();
-
-      this.app.showToast('Successfully claimed rewards! 🎉', 'success');
+      // Check and handle approval
+      const needsApproval = await this.checkStakingApproval(amountPRGX);
+      if (needsApproval) {
+        await this.approveStaking(amountPRGX);
+      }
       
-      // Refresh data
-      await this.loadStakingData();
+      this.updateStatusLog('🚀 Executing stake transaction...', 'pending');
+      
+      const stakingContract = new ethers.Contract(
+        CONFIG.CONTRACTS.STAKING,
+        CONFIG.ABIS.STAKING,
+        window.wallet.signer
+      );
+      
+      const amountWei = ethers.parseEther(amountPRGX);
+      const tx = await stakingContract.stake(amountWei);
+      
+      this.updateStatusLog(`⏳ Stake TX: ${tx.hash}`, 'pending');
+      
+      const receipt = await tx.wait();
+      
+      this.updateStatusLog('✅ Stake successful!', 'success');
+      
+      // Reload dashboard
+      await this.loadDashboard();
+      
+      window.wallet.showToast(`Successfully staked ${amountPRGX} PRGX`, 'success');
+      
+    } catch (error) {
+      console.error('Stake failed:', error);
+      this.updateStatusLog(`❌ Stake failed: ${error.message}`, 'error');
+      
+      if (error.code === 4001) {
+        throw new Error('Transaction cancelled');
+      } else {
+        throw new Error(`Stake failed: ${error.message}`);
+      }
+    }
+  }
 
+  // ================================================================
+  // UNSTAKE PRGX
+  // ================================================================
+  async unstake(amountPRGX) {
+    if (!window.wallet?.isConnected) {
+      throw new Error('Wallet not connected');
+    }
+    
+    if (!amountPRGX || parseFloat(amountPRGX) <= 0) {
+      throw new Error('Invalid unstake amount');
+    }
+    
+    if (!this.dashboardData) {
+      throw new Error('Dashboard data not loaded');
+    }
+    
+    if (parseFloat(amountPRGX) > this.dashboardData.stakedBalance) {
+      throw new Error('Insufficient staked balance');
+    }
+    
+    try {
+      this.updateStatusLog('🚀 Executing unstake transaction...', 'pending');
+      
+      const stakingContract = new ethers.Contract(
+        CONFIG.CONTRACTS.STAKING,
+        CONFIG.ABIS.STAKING,
+        window.wallet.signer
+      );
+      
+      const amountWei = ethers.parseEther(amountPRGX);
+      const tx = await stakingContract.unstake(amountWei);
+      
+      this.updateStatusLog(`⏳ Unstake TX: ${tx.hash}`, 'pending');
+      
+      const receipt = await tx.wait();
+      
+      this.updateStatusLog('✅ Unstake successful!', 'success');
+      
+      // Reload dashboard
+      await this.loadDashboard();
+      
+      window.wallet.showToast(`Successfully unstaked ${amountPRGX} PRGX`, 'success');
+      
+    } catch (error) {
+      console.error('Unstake failed:', error);
+      this.updateStatusLog(`❌ Unstake failed: ${error.message}`, 'error');
+      
+      if (error.code === 4001) {
+        throw new Error('Transaction cancelled');
+      } else {
+        throw new Error(`Unstake failed: ${error.message}`);
+      }
+    }
+  }
+
+  // ================================================================
+  // CLAIM REWARDS
+  // ================================================================
+  async claimRewards() {
+    if (!window.wallet?.isConnected) {
+      throw new Error('Wallet not connected');
+    }
+    
+    if (!this.dashboardData) {
+      throw new Error('Dashboard data not loaded');
+    }
+    
+    try {
+      this.updateStatusLog('🚀 Executing claim transaction...', 'pending');
+      
+      const stakingContract = new ethers.Contract(
+        CONFIG.CONTRACTS.STAKING,
+        CONFIG.ABIS.STAKING,
+        window.wallet.signer
+      );
+      
+      const tx = await stakingContract.claimRewards();
+      
+      this.updateStatusLog(`⏳ Claim TX: ${tx.hash}`, 'pending');
+      
+      const receipt = await tx.wait();
+      
+      // Extract claimed amount from event
+      const claimedEvent = receipt.logs?.find(log => {
+        try {
+          const parsed = stakingContract.interface.parseLog(log);
+          return parsed.name === 'RewardsClaimed';
+        } catch {
+          return false;
+        }
+      });
+      
+      let claimedAmount = 0;
+      if (claimedEvent) {
+        const parsed = stakingContract.interface.parseLog(claimedEvent);
+        claimedAmount = Number(ethers.formatEther(parsed.args.amount));
+      }
+      
+      this.updateStatusLog(`✅ Claimed ${claimedAmount.toFixed(4)} PRGX!`, 'success');
+      
+      // Reload dashboard
+      await this.loadDashboard();
+      
+      window.wallet.showToast(`Successfully claimed ${claimedAmount.toFixed(4)} PRGX`, 'success');
+      
     } catch (error) {
       console.error('Claim failed:', error);
-      this.app.showToast('Claim failed: ' + error.message, 'error');
-    } finally {
-      this.app.setLoading(claimBtn, false);
-    }
-  }
-
-  // Stake all available PRGX
-  async stakeAll() {
-    const data = await this.fetchStakingData();
-    // Format the balance properly for display
-    const availableAmount = parseFloat(this.safeFormatUnits(data.userBalance, 18)).toFixed(4);
-    
-    const input = document.querySelector('.stake-input');
-    if (input) {
-      input.value = availableAmount;
-      // Update the max attribute for validation
-      input.max = availableAmount;
-      this.handleStake();
-    }
-  }
-
-  // Unstake all staked PRGX
-  async unstakeAll() {
-    const data = await this.fetchStakingData();
-    // Format the staked amount properly for display
-    const stakedAmount = parseFloat(this.safeFormatUnits(data.userStaked, 18)).toFixed(4);
-    
-    const input = document.querySelector('.unstake-input');
-    if (input) {
-      input.value = stakedAmount;
-      // Update the max attribute for validation
-      input.max = stakedAmount;
-      this.handleUnstake();
-    }
-  }
-
-  // Validate input
-  validateInput(input) {
-    const value = parseFloat(input.value);
-    const max = parseFloat(input.max || '999999999');
-    
-    if (value > max) {
-      input.value = max;
-      this.app.showToast('Maximum amount is ' + max, 'warning');
-    }
-    
-    if (value < 0) {
-      input.value = 0;
-    }
-  }
-
-  // Start auto refresh
-  startAutoRefresh() {
-    // Refresh every 30 seconds
-    this.refreshInterval = setInterval(() => {
-      if (this.app.signer) {
-        this.loadStakingData();
+      this.updateStatusLog(`❌ Claim failed: ${error.message}`, 'error');
+      
+      if (error.code === 4001) {
+        throw new Error('Transaction cancelled');
+      } else {
+        throw new Error(`Claim failed: ${error.message}`);
       }
-    }, 30000);
-  }
-
-  // Stop auto refresh
-  stopAutoRefresh() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-      this.refreshInterval = null;
     }
   }
 
-  // Format token amount safely (ethers v6 syntax)
-  safeFormatUnits(value, decimals = 18) {
+  // ================================================================
+  // APPROVAL HELPERS
+  // ================================================================
+  async checkStakingApproval(amount) {
     try {
-      if (!value) return '0';
-      return ethers.formatUnits(value, decimals);
+      const prgxContract = new ethers.Contract(
+        CONFIG.CONTRACTS.PRGX_TOKEN,
+        CONFIG.ABIS.ERC20,
+        window.wallet.provider
+      );
+      
+      const allowance = await prgxContract.allowance(
+        window.wallet.address,
+        CONFIG.CONTRACTS.STAKING
+      );
+      
+      const amountWei = ethers.parseEther(amount);
+      return allowance < amountWei;
     } catch (error) {
-      console.warn('Format error:', error.message);
-      return '0';
+      console.warn('Approval check failed:', error);
+      return true; // Assume approval needed
     }
   }
 
-  // Format time until next reward
-  formatTimeUntilReward() {
-    const now = Math.floor(Date.now() / 1000);
-    const nextBlock = Math.ceil(now / 12) * 12; // Assuming 12-second blocks
-    const secondsUntil = nextBlock - now;
+  async approveStaking(amount) {
+    try {
+      this.updateStatusLog('📝 Approving PRGX for staking...', 'pending');
+      
+      const prgxContract = new ethers.Contract(
+        CONFIG.CONTRACTS.PRGX_TOKEN,
+        CONFIG.ABIS.ERC20,
+        window.wallet.signer
+      );
+      
+      const amountWei = ethers.parseEther(amount);
+      const tx = await prgxContract.approve(CONFIG.CONTRACTS.STAKING, amountWei);
+      
+      this.updateStatusLog(`⏳ Approval TX: ${tx.hash}`, 'pending');
+      
+      const receipt = await tx.wait();
+      
+      this.updateStatusLog('✅ PRGX approved for staking', 'success');
+      
+    } catch (error) {
+      console.error('Approval failed:', error);
+      throw new Error(`Approval failed: ${error.message}`);
+    }
+  }
+
+  // ================================================================
+  // MAX BUTTONS
+  // ================================================================
+  setMaxStake() {
+    if (!this.dashboardData) return;
     
-    if (secondsUntil <= 0) return 'Now';
+    const input = document.getElementById('stakeAmount');
+    if (input) {
+      input.value = Math.max(0, this.dashboardData.walletBalance - 0.001).toFixed(6);
+    }
+  }
+
+  setMaxUnstake() {
+    if (!this.dashboardData) return;
     
-    const minutes = Math.floor(secondsUntil / 60);
-    const seconds = secondsUntil % 60;
+    const input = document.getElementById('unstakeAmount');
+    if (input) {
+      input.value = this.dashboardData.stakedBalance.toFixed(6);
+    }
+  }
+
+  // ================================================================
+  // UI UPDATES
+  // ================================================================
+  updateDashboardUI() {
+    if (!this.dashboardData) return;
     
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    // Update stat cards
+    this.updateElement('stakedBalance', this.dashboardData.stakedBalance.toFixed(2));
+    this.updateElement('totalStaked', this.dashboardData.totalStaked.toFixed(0));
+    this.updateElement('estimatedAPR', `${this.dashboardData.apr.toFixed(1)}%`);
+    
+    // Update wallet and staked displays
+    this.updateElement('walletPRGX', `${this.dashboardData.walletBalance.toFixed(4)} PRGX`);
+    this.updateElement('stakedDisplay', `${this.dashboardData.stakedBalance.toFixed(4)} PRGX`);
+    
+    // Update pending rewards (will be updated by live counter)
+    this.updateElement('pendingRewards', this.dashboardData.pendingRewards.toFixed(4));
+    
+    // Update claim button
+    this.updateClaimButton(this.dashboardData.pendingRewards);
+  }
+
+  updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = value;
+    }
+  }
+
+  updateClaimButton(pendingRewards) {
+    const claimBtn = document.getElementById('claimBtn');
+    const claimAmount = document.getElementById('claimAmount');
+    
+    if (claimBtn && claimAmount) {
+      claimAmount.textContent = pendingRewards.toFixed(4);
+      claimBtn.disabled = pendingRewards <= 0;
+    }
+  }
+
+  showDisconnectedState() {
+    // Show placeholder values
+    this.updateElement('stakedBalance', '—');
+    this.updateElement('pendingRewards', '—');
+    this.updateElement('estimatedAPR', '—');
+    this.updateElement('totalStaked', '—');
+    this.updateElement('walletPRGX', '— PRGX');
+    this.updateElement('stakedDisplay', '— PRGX');
+    
+    // Disable action buttons
+    const buttons = ['claimBtn'];
+    buttons.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.disabled = true;
+    });
+  }
+
+  // ================================================================
+  // UI HELPERS
+  // ================================================================
+  updateStatusLog(message, type = 'info') {
+    const log = document.getElementById('statusLog');
+    if (!log) return;
+    
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    entry.textContent = message;
+    
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // ================================================================
+  // CLEANUP
+  // ================================================================
+  cleanup() {
+    this.stopLiveRewardCounter();
+    this.dashboardData = null;
   }
 }
 
-// Initialize staking dashboard when app is ready
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    if (window.purgeXApp) {
-      window.stakingDashboard = new StakingDashboard(window.purgeXApp);
-    }
-  }, 100);
-});
+// ================================================================
+// GLOBAL INSTANCE
+// ================================================================
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = StakingDashboard;
-} else {
-  window.StakingDashboard = StakingDashboard;
-}
+window.stakingManager = new StakingManager();

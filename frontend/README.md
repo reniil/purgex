@@ -1,203 +1,195 @@
 # PurgeX Frontend
 
-A professional, multi-page website for PurgeX (PRGX) on PulseChain.
+Multi-page DeFi frontend for PRGX on PulseChain. Convert worthless ERC-20 dust tokens into valuable PRGX and earn staking rewards.
 
 ## 🚀 Quick Start
 
-### Option 1: Direct Open
-Simply open `index.html` in your browser - no build step required!
+1. **Clone or download** this repository
+2. **Open index.html** in your browser (or serve with `npx serve .`)
+3. **Connect MetaMask or Rabby** to PulseChain (chainId 369)
+4. **Start sweeping** your dust tokens for PRGX!
 
-### Option 2: Local Server
-For better development experience:
+## 🌐 Tech Stack
 
-```bash
-# Using Python 3
-python -m http.server 3000
+- **Pure HTML/CSS/JavaScript** - No frameworks, maximum performance
+- **Ethers.js v6** - Web3 interactions via CDN
+- **Hash-based SPA routing** - Single-page application without server
+- **Responsive design** - Works on desktop, tablet, and mobile
 
-# Using Node.js
-npx serve .
+## 📄 Pages
 
-# Using PHP
-php -S localhost:3000
-```
+- **/** - Home page with hero, stats, and overview
+- **#/sweep** - Main dust sweeper interface (core feature)
+- **#/staking** - Stake PRGX and earn 6.4 PRGX/second
+- **#/tokenomics** - Supply breakdown and token economics
+- **#/contracts** - Verified contract addresses and security info
+- **#/about** - Team, roadmap, and contact information
 
-Then visit `http://localhost:3000`
+## 🔗 Contracts (PulseChain)
 
-## 📁 File Structure
+| Contract | Address | Status |
+|----------|---------|--------|
+| PRGX Token | `0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0` | ✅ Verified |
+| Sweeper | `0xc6735B24D5A082E0A75637179A76ecE8a1aE1575` | ✅ Verified |
+| Staking | `0x7FaB14198ae87E6ad95C785E61f14b68D175317B` | ✅ Verified |
+| Multisig Treasury | `0xa3C05e032DC179C7BC801C65F35563c8382CF01A` | ✅ 3-of-5 |
+| LP Token | `0xc76f9b605a929a35f1a6d8b200630e84e27caaeb` | 🔒 Locked |
 
-```
-frontend/
-├── index.html          # Home page with hero, features, stats
-├── sweep.html          # Dust sweeper interface  
-├── staking.html        # Staking dashboard
-├── tokenomics.html     # Token distribution & economics
-├── contracts.html      # Contract verification & security
-├── about.html          # Team, vision, roadmap
-├── css/
-│   └── styles.css      # Complete styling system
-├── js/
-│   ├── config.js        # Contract addresses & constants
-│   ├── router.js        # Simple hash-based routing
-│   ├── app.js           # Core app logic & wallet connect
-│   ├── sweeper.js       # Dust sweeper functionality
-│   └── staking.js       # Staking dashboard logic
-└── assets/
-    └── favicon.svg      # PurgeX broom icon
-```
+## 🛠️ Features
 
-## 🎨 Features
+### 🔥 Dust Sweeping
+- **3-strategy token discovery**: PulseScan API + known dust list + transfer events
+- **Batch contract calls** for optimal performance
+- **Real-time estimates** as you select tokens
+- **Per-token approval tracking** with progress indicators
+- **5% protocol fee** (permanently capped)
 
-### ✅ Core Functionality
-- **Wallet Connection**: MetaMask, WalletConnect support
-- **Dust Sweeping**: Bulk token discovery and sweeping
-- **Staking Dashboard**: Real-time rewards, APR tracking
-- **Multi-page Navigation**: Clean hash-based routing
+### 💰 Staking System
+- **Live reward counter** ticking up every second
+- **6.4 PRGX/second** distributed to all stakers
+- **No lock-up period** - unstake anytime
+- **APR calculation** based on current participation
+- **Emergency unstake** always available
 
-### ✅ Professional Design
-- **Dark Theme**: Modern PulseChain aesthetic
-- **Responsive**: Mobile-first design (320px+)
-- **Animations**: Smooth transitions and micro-interactions
-- **Typography**: Inter font for readability
+### 🎨 Design System
+- **PulseChain purple/pink theme** matching ecosystem
+- **Fully responsive** with mobile-first approach
+- **Smooth animations** and micro-interactions
+- **Accessibility compliant** with semantic HTML
+- **Dark mode optimized** for reduced eye strain
 
-### ✅ Contract Integration
-- **Live Addresses**: All deployed contracts integrated
-- **Real-time Data**: Staking stats, token balances
-- **Transaction Handling**: Approval patterns, gas estimation
+### 🔒 Security Features
+- **All contracts verified** on PulseScan
+- **Multisig treasury** (3-of-5 threshold)
+- **LP tokens locked** 2+ years (no rug possible)
+- **No admin keys** on staking contract
+- **Independent audits** completed
 
-## 🔧 Configuration
+## 📋 Wallet Support
 
-### Contract Addresses (Live)
-```javascript
-PRGX_TOKEN: '0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0'
-SWEEPER: '0xc6735B24D5A082E0A75637179A76ecE8a1aE1575'  
-STAKING: '0x7FaB14198ae87E6ad95C785E61f14b68D175317B'
-MULTISIG: '0xa3C05e032DC179C7BC801C65F35563c8382CF01A'
-LP_TOKEN: '0xc76f9b605a929a35f1a6d8b200630e84e27caaeb'
-```
+- **MetaMask** - Full support with auto network switching
+- **Rabby** - Optimized for DeFi power users
+- **Any EIP-1193 wallet** - Compatible with all Web3 wallets
 
-### Network Configuration
-- **Chain ID**: 369 (PulseChain)
+## 🌍 Network Requirements
+
+- **PulseChain** (Chain ID: 369)
 - **RPC**: `https://rpc.pulsechain.com`
 - **Explorer**: `https://scan.pulsechain.com`
 
-## 🌐 Pages Overview
+## 🔧 Development
 
-### 1. Home (`/`)
-- Hero section with CTAs
-- Live stats (TVL, treasury, sweepers)
-- Feature highlights
-- Staking preview
+### File Structure
+```
+frontend/
+├── index.html              # Main entry point
+├── pages/                  # HTML pages
+│   ├── home.html
+│   ├── sweep.html
+│   ├── staking.html
+│   ├── tokenomics.html
+│   ├── contracts.html
+│   └── about.html
+├── css/
+│   └── styles.css          # Complete design system
+├── js/
+│   ├── config.js           # Contracts & configuration
+│   ├── router.js           # SPA routing
+│   ├── app.js              # Main initialization
+│   ├── wallet.js           # Wallet connection
+│   ├── tokens.js           # Token discovery
+│   ├── sweeper.js          # Sweep logic
+│   ├── staking.js          # Staking dashboard
+│   └── price.js            # Price fetching
+├── assets/
+│   ├── favicon.svg
+│   └── logo.svg
+└── README.md
+```
 
-### 2. Sweep (`#/sweep`)
-- Token discovery from wallet
-- Bulk selection interface
-- Sweep execution with 1% fee
-- Transaction status tracking
+### Configuration
+Edit `js/config.js` to update:
+- Contract addresses
+- Network settings
+- API endpoints
+- Token lists
 
-### 3. Staking (`#/staking`)
-- Real-time staking stats
-- Stake/unstake operations
-- Reward claiming
-- APR calculations
-
-### 4. Tokenomics (`#/tokenomics`)
-- Supply distribution charts
-- Vesting schedules
-- Value accrual mechanisms
-- Buy PRGX on PulseX
-
-### 5. Contracts (`#/contracts`)
-- Verified contract list
-- Security features
-- Fee structure
-- Audit information
-
-### 6. About (`#/about`)
-- Team profiles
-- Project vision
-- Development roadmap
-- Contact information
-
-## 🛠 Development
-
-### Adding New Pages
-1. Create HTML file in root (e.g., `newpage.html`)
-2. Add route in `js/router.js`:
-   ```javascript
-   router.addRoute('/newpage', () => showPage('newpage-page'));
-   ```
-3. Add navigation link in header
-4. Style with existing CSS classes
-
-### Modifying Styles
-- All styles in `css/styles.css`
-- CSS variables for easy theming
-- Mobile-first responsive design
+### Styling
+All styles are in `css/styles.css` with:
+- CSS custom properties for theming
 - Component-based organization
+- Mobile-first responsive design
+- Smooth animations and transitions
 
-### Contract Interactions
-- Use ethers.js v6 (UMD from CDN)
-- Contract ABIs in respective JS files
-- Error handling with user-friendly messages
-- Loading states and transaction tracking
+## 🔍 Key Modules
 
-## 🔒 Security Notes
+### Wallet Manager (`js/wallet.js`)
+- Auto-reconnect functionality
+- Network switching prompts
+- Event handling for accounts/chains
+- Global UI state management
 
-- **No Private Keys**: Frontend never handles private keys
-- **MetaMask Only**: All signing via wallet provider
-- **HTTPS Required**: For production deployment
-- **Contract Verified**: All addresses verified on PulseScan
+### Token Discovery (`js/tokens.js`)
+- Multi-strategy token detection
+- Batch contract calls for performance
+- Real-time balance updates
+- Custom token addition
 
-## 📱 Mobile Optimization
+### Sweeper (`js/sweeper.js`)
+- Approval flow management
+- Transaction status logging
+- Confirmation modals
+- Error handling
 
-- **Breakpoints**: 640px, 768px, 1024px, 1280px
-- **Touch Targets**: Minimum 44px tap targets
-- **Responsive Grid**: Auto-adjusting layouts
-- **Performance**: Optimized images, minimal JS
+### Staking Manager (`js/staking.js`)
+- Live reward counter
+- APR calculations
+- Batch operations
+- Performance tracking
+
+### Price Oracle (`js/price.js`)
+- Multi-source price fetching
+- Auto-refresh every 30 seconds
+- Fallback mechanisms
+- USD conversions
 
 ## 🚀 Deployment
 
-### Static Hosting (Recommended)
-```bash
-# Deploy to Netlify
-netlify deploy --prod --dir=frontend
+### Static Hosting
+Deploy to any static hosting service:
+- **Vercel**, **Netlify**, **GitHub Pages**
+- **IPFS** for decentralized hosting
+- **AWS S3** with CloudFront
 
-# Deploy to Vercel  
-vercel --prod frontend/
+### Build Process
+No build step required - it's vanilla HTML/CSS/JS!
+Just upload the files as-is.
 
-# Deploy to GitHub Pages
-gh-pages -d frontend/
-```
+## 🤝 Contributing
 
-### Server Hosting
-```bash
-# Using the unified server
-cd ..
-npm start
-# Frontend served at http://localhost:3000
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-- **MetaMask Not Connecting**: Ensure PulseChain network added
-- **Contract Calls Failing**: Check RPC endpoint status
-- **Styles Not Loading**: Verify CSS file path
-- **Routing Not Working**: Check hash-based URLs
-
-### Debug Mode
-Open browser console and look for:
-- Wallet connection status
-- Contract interaction logs
-- Network switch requests
-- Transaction confirmations
+1. **Fork** the repository
+2. **Create** a feature branch
+3. **Make** your changes
+4. **Test** thoroughly on PulseChain
+5. **Submit** a pull request
 
 ## 📞 Support
 
-- **GitHub**: https://github.com/reniil/purgex
-- **Discord**: https://discord.gg/purgex  
-- **Twitter**: @purgex_xyz
+- **GitHub**: [github.com/reniil/purgex](https://github.com/reniil/purgex)
+- **Twitter**: [@purgex_xyz](https://twitter.com/purgex_xyz)
 - **Email**: hello@purgex.xyz
+
+## ⚠️ Disclaimer
+
+This is experimental DeFi software. Use at your own risk. Always:
+- **Do your own research** before using
+- **Start with small amounts**
+- **Understand the risks** involved
+- **Never share your private keys**
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
 
 ---
 
