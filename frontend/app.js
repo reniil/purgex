@@ -701,11 +701,11 @@ let app = {
   },
   
   setupEventListeners() {
-    DOM.connectBtn?.addEventListener('click', () => this.connectWallet());
-    DOM.connectBtnPrompt?.addEventListener('click', () => this.connectWallet());
-    DOM.switchNetworkBtn?.addEventListener('click', () => this.switchNetwork());
-    DOM.selectAll?.addEventListener('change', (e) => this.toggleSelectAll(e.target.checked));
-    DOM.addCustomTokenBtn?.addEventListener('click', () => this.addCustomToken());
+    DOM.connectBtn?.addEventListener('click', connectWallet);
+    DOM.connectBtnPrompt?.addEventListener('click', connectWallet);
+    DOM.switchNetworkBtn?.addEventListener('click', switchNetwork);
+    DOM.selectAll?.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
+    DOM.addCustomTokenBtn?.addEventListener('click', () => addCustomToken());
     DOM.sweepBtn?.addEventListener('click', () => this.executeSweep());
     
     // Setup staking handlers
@@ -728,6 +728,132 @@ let app = {
     addLog('Sweep functionality would go here...');
   }
 };
+
+// ==================== STANDALONE FUNCTIONS (for event handlers) ====================
+async function connectWallet() {
+  if (typeof window.ethereum === 'undefined') {
+    alert('Please install MetaMask to use this app');
+    return;
+  }
+
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const accounts = await provider.send('eth_requestAccounts', []);
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+
+    state.provider = provider;
+    state.signer = signer;
+    state.account = accounts[0];
+
+    // Check if on PulseChain
+    const chainId = Number(network.chainId);
+    if (chainId !== CONFIG.CHAIN_ID) {
+      DOM.networkWarning.style.display = 'block';
+      DOM.dustPanel.style.display = 'none';
+      DOM.sweepPanel.style.display = 'none';
+      DOM.prgxCard.style.display = 'none';
+      DOM.stakingPanel.style.display = 'none';
+      return;
+    }
+
+    DOM.networkWarning.style.display = 'none';
+    addLog(`Connected: ${shortenAddress(state.account)}`);
+
+    // Start polling for token updates
+    startPolling();
+
+    // Initial UI update
+    updateUI();
+
+  } catch (error) {
+    console.error('Connection error:', error);
+    addLog(`❌ Connection failed: ${error.message}`, 'error');
+  }
+}
+
+async function switchNetwork() {
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: CONFIG.NETWORK.chainId }]
+    });
+    location.reload();
+  } catch (error) {
+    // Chain not added, try adding it
+    if (error.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [CONFIG.NETWORK]
+        });
+        location.reload();
+      } catch (addError) {
+        alert('Failed to add PulseChain network. Please add it manually in MetaMask.');
+      }
+    }
+  }
+}
+
+function toggleSelectAll(checked) {
+  state.tokenData.forEach(token => {
+    token.selected = checked;
+  });
+  renderTokenTable();
+}
+
+async function addCustomToken() {
+  const address = DOM.customTokenAddress.value.trim();
+  if (!ethers.isAddress(address)) {
+    alert('Invalid address');
+    return;
+  }
+  
+  // Check if already exists
+  if (state.tokenData.find(t => t.address.toLowerCase() === address.toLowerCase())) {
+    alert('Token already in list');
+    return;
+  }
+  
+  try {
+    const token = new ethers.Contract(address, CONFIG.ERC20_ABI, state.provider);
+    const [symbol, name, decimals] = await Promise.all([
+      token.symbol(),
+      token.name(),
+      token.decimals()
+    ]);
+    
+    const balance = await token.balanceOf(state.account);
+    
+    if (balance === 0n) {
+      alert('This token has 0 balance in your wallet');
+      return;
+    }
+    
+    const customToken = {
+      address,
+      symbol,
+      name,
+      decimals: Number(decimals),
+      balance: ethers.formatUnits(balance, decimals),
+      rawBalance: balance,
+      isCustom: true,
+      selected: false,
+      status: 'pending'
+    };
+    
+    state.customTokens.push(customToken);
+    DOM.customTokenAddress.value = '';
+    
+    // Refresh token list
+    await fetchAndUpdateTokens();
+    addLog(`Added custom token: ${symbol}`);
+    
+  } catch (error) {
+    console.error('Error adding custom token:', error);
+    addLog(`❌ Failed to add token: ${error.message}`, 'error');
+  }
+}
 
 // Start the app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
