@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRGX Tokenomics - PurgeX</title>
+  <meta name="description" content="PRGX token supply distribution, vesting schedules, and value accrual mechanisms">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <!-- Header (same as index.html) -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="index.html" class="logo">
+          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M8 6V3a1 1 0 011-1h6a1 1 0 011 1v3M8 6l2 2m-2-2l2-2M15 6l-2 2m2-2l-2-2"/>
+            <circle cx="12" cy="18" r="2"/>
+            <line x1="12" y1="14" x2="12" y2="16"/>
+          </svg>
+          <span>PurgeX</span>
+        </a>
+        
+        <nav class="nav">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sweep.html" class="nav-link">Sweep</a>
+          <a href="staking.html" class="nav-link">Staking</a>
+          <a href="tokenomics.html" class="nav-link active">Tokenomics</a>
+          <a href="contracts.html" class="nav-link">Contracts</a>
+          <a href="about.html" class="nav-link">About</a>
+          
+          <div class="nav-actions">
+            <button class="btn btn-secondary btn-small connect-wallet-btn" data-action="connect-wallet">
+              Connect Wallet
+            </button>
+            <div class="account-info" style="display: none;">
+              <span class="wallet-address" data-action="copy">0x0000...0000</span>
+              <button class="btn btn-secondary btn-small disconnect-wallet-btn" data-action="disconnect-wallet">
+                Disconnect
+              </button>
+            </div>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
+      <!-- Page Header -->
+      <section class="page-header">
+        <h1>PRGX Tokenomics</h1>
+        <p>Transparent supply distribution with locked liquidity and community governance</p>
+      </section>
+
+      <!-- Supply Overview -->
+      <section class="supply-overview">
+        <div class="card">
+          <h2>Total Supply: 1,000,000,000 PRGX</h2>
+          <p>Fixed supply with no inflation. All tokens minted at deployment.</p>
+          
+          <div class="supply-chart">
+            <div class="chart-bars">
+              <div class="chart-bar" style="--percentage: 50%; --color: var(--primary);">
+                <div class="bar-label">Liquidity Pool</div>
+                <div class="bar-value">500M PRGX (50%)</div>
+              </div>
+              <div class="chart-bar" style="--percentage: 25%; --color: var(--secondary);">
+                <div class="bar-label">Treasury</div>
+                <div class="bar-value">250M PRGX (25%)</div>
+              </div>
+              <div class="chart-bar" style="--percentage: 15%; --color: var(--accent);">
+                <div class="bar-label">Team & Advisors</div>
+                <div class="bar-value">150M PRGX (15%)</div>
+              </div>
+              <div class="chart-bar" style="--percentage: 5%; --color: var(--warning);">
+                <div class="bar-label">Community Rewards</div>
+                <div class="bar-value">50M PRGX (5%)</div>
+              </div>
+              <div class="chart-bar" style="--percentage: 3%; --color: var(--info);">
+                <div class="bar-label">Airdrops & Marketing</div>
+                <div class="bar-value">30M PRGX (3%)</div>
+              </div>
+              <div class="chart-bar" style="--percentage: 2%; --color: var(--error);">
+                <div class="bar-label">Development Fund</div>
+                <div class="bar-value">20M PRGX (2%)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Distribution Details -->
+      <section class="distribution-details">
+        <h2>Supply Distribution</h2>
+        <div class="distribution-grid">
+          <div class="distribution-card">
+            <div class="card-header">
+              <h3>Liquidity Pool</h3>
+              <span class="percentage">50%</span>
+            </div>
+            <div class="card-content">
+              <p><strong>500M PRGX</strong> locked in PRGX/PLS liquidity pool</p>
+              <ul>
+                <li>✅ Locked for 2+ years via DXLock</li>
+                <li>✅ No rugpull risk</li>
+                <li>✅ Provides deep liquidity for trading</li>
+                <li>✅ LP tokens: <code>0xc76f9b605a929a35f1a6d8b200630e84e27caaeb</code></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="distribution-card">
+            <div class="card-header">
+              <h3>Multisig Treasury</h3>
+              <span class="percentage">25%</span>
+            </div>
+            <div class="card-content">
+              <p><strong>250M PRGX</strong> controlled by 3/5 multisig</p>
+              <ul>
+                <li>✅ 3/5 multisig: <code>0xa3C05e032DC179C7BC801C65F35563c8382CF01A</code></li>
+                <li>✅ 2-year vesting schedule</li>
+                <li>✅ Community governance</li>
+                <li>✅ Transparent operations</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="distribution-card">
+            <div class="card-header">
+              <h3>Team & Advisors</h3>
+              <span class="percentage">15%</span>
+            </div>
+            <div class="card-content">
+              <p><strong>150M PRGX</strong> for team and early contributors</p>
+              <ul>
+                <li>⏳ 4-year vesting with 1-year cliff</li>
+                <li>⏳ Linear release after cliff</li>
+                <li>⏳ Aligns long-term incentives</li>
+                <li>⏳ No early dumping</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="distribution-card">
+            <div class="card-header">
+              <h3>Community Rewards</h3>
+              <span class="percentage">5%</span>
+            </div>
+            <div class="card-content">
+              <p><strong>50M PRGX</strong> for community incentives</p>
+              <ul>
+                <li>🎁 Staking rewards (6.4 PRGX/sec)</li>
+                <li>🎁 Future governance rewards</li>
+                <li>🎁 Community initiatives</li>
+                <li>🎁 Bug bounties</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="distribution-card">
+            <div class="card-header">
+              <h3>Airdrops & Marketing</h3>
+              <span class="percentage">3%</span>
+            </div>
+            <div class="card-content">
+              <p><strong>30M PRGX</strong> for user acquisition</p>
+              <ul>
+                <li>📢 Marketing campaigns</li>
+                <li>📢 Influencer partnerships</li>
+                <li>📢 User airdrops</li>
+                <li>📢 Exchange listings</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="distribution-card">
+            <div class="card-header">
+              <h3>Development Fund</h3>
+              <span class="percentage">2%</span>
+            </div>
+            <div class="card-content">
+              <p><strong>20M PRGX</strong> for ongoing development</p>
+              <ul>
+                <li>🔧 Smart contract audits</li>
+                    <li>🔧 Security improvements</li>
+                    <li>🔧 New features</li>
+                    <li>🔧 Cross-chain expansion</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Vesting Schedule -->
+          <section class="vesting-schedule">
+            <h2>Vesting Schedule</h2>
+            <div class="card">
+              <div class="timeline">
+                <div class="timeline-item">
+                  <div class="timeline-marker current"></div>
+                  <div class="timeline-content">
+                    <h3>Launch (Q2 2026)</h3>
+                    <p>Liquidity locked, treasury funded, team vesting starts</p>
+                  </div>
+                </div>
+                
+                <div class="timeline-item">
+                  <div class="timeline-marker"></div>
+                  <div class="timeline-content">
+                    <h3>1 Year Cliff (Q2 2027)</h3>
+                    <p>Team tokens begin linear vesting over 3 years</p>
+                  </div>
+                </div>
+                
+                <div class="timeline-item">
+                  <div class="timeline-marker"></div>
+                  <div class="timeline-content">
+                    <h3>2 Years (Q2 2028)</h3>
+                    <p>33% of team tokens released, treasury fully vested</p>
+                  </div>
+                </div>
+                
+                <div class="timeline-item">
+                  <div class="timeline-marker"></div>
+                  <div class="timeline-content">
+                    <h3>4 Years (Q2 2030)</h3>
+                    <p>All team tokens fully vested, complete distribution</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Value Accrual -->
+          <section class="value-accrual">
+            <h2>Value Accrual Mechanisms</h2>
+            <div class="value-grid">
+              <div class="value-card">
+                <div class="value-icon">🔥</div>
+                <h3>Buybacks & Burn</h3>
+                <p>50% of sweep fees used to buy and burn PRGX, reducing supply</p>
+              </div>
+              
+              <div class="value-card">
+                <div class="value-icon">💰</div>
+                <h3>Staking Demand</h3>
+                <p>6.4 PRGX/sec rewards create continuous buying pressure</p>
+              </div>
+              
+              <div class="value-card">
+                <div class="value-icon">🔒</div>
+                <h3>Liquidity Lock</h3>
+                <p>50% of supply locked for 2+ years prevents sudden dumps</p>
+              </div>
+              
+              <div class="value-card">
+                <div class="value-icon">🏛️</div>
+                <h3>Governance Rights</h3>
+                <p>Future DAO governance gives PRGX real utility value</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Buy PRGX Section -->
+          <section class="buy-section">
+            <div class="card highlight-card">
+              <h2>Acquire PRGX on PulseX</h2>
+              <p>Get PRGX tokens on the leading PulseChain DEX</p>
+              
+              <div class="buy-info">
+              <div class="buy-item">
+                <span class="buy-label">Exchange:</span>
+                <span class="buy-value">PulseX</span>
+              </div>
+              <div class="buy-item">
+                <span class="buy-label">Trading Pair:</span>
+                <span class="buy-value">PRGX/PLS</span>
+              </div>
+              <div class="buy-item">
+                <span class="buy-label">Contract:</span>
+                <code class="buy-value address-text" data-action="copy" 
+                      data-address="0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0">
+                  0x352b...A07d0
+                </code>
+              </div>
+              <div class="buy-item">
+                <span class="buy-label">Liquidity:</span>
+                <span class="buy-value">500M PRGX Locked 2+ Years</span>
+              </div>
+              <div class="buy-item">
+                <span class="buy-label">Current Supply:</span>
+                <span class="buy-value">1B PRGX (Fixed)</span>
+              </div>
+              <div class="buy-item">
+                <span class="buy-label">Treasury:</span>
+                <span class="buy-value">250M PRGX (3/5 Multisig)</span>
+              </div>
+            </div>
+              
+              <div class="buy-actions">
+                <a href="https://pulsex.com" target="_blank" class="btn btn-primary btn-large">
+                  Trade on PulseX
+                </a>
+                <button class="btn btn-secondary add-token-btn" data-action="add-token">
+                  Add to Wallet
+                </button>
+              </div>
+              
+              <div class="security-note">
+                <p>✅ Liquidity tokens locked via <a href="https://dxsale.app/lock" target="_blank">DXLock</a></p>
+                <p>✅ No admin functions after deployment</p>
+                <p>✅ Contract verified on PulseScan</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <!-- Footer (same as index.html) -->
+      <footer class="footer">
+        <div class="container">
+          <div class="footer-content">
+            <div class="footer-section">
+              <h4>PurgeX</h4>
+              <p>Sweep dust. Earn PRGX.</p>
+              <div class="footer-links">
+                <a href="index.html">Home</a>
+                <a href="sweep.html">Sweep</a>
+                <a href="staking.html">Staking</a>
+                <a href="tokenomics.html">Tokenomics</a>
+              </div>
+            </div>
+            
+            <div class="footer-section">
+              <h4>Resources</h4>
+              <div class="footer-links">
+                <a href="https://scan.pulsechain.com" target="_blank">PulseScan</a>
+                <a href="https://pulsex.com" target="_blank">PulseX</a>
+                <a href="https://github.com/reniil/purgex" target="_blank">GitHub</a>
+                <a href="contracts.html">Contracts</a>
+              </div>
+            </div>
+            
+            <div class="footer-section">
+              <h4>Community</h4>
+              <div class="footer-links">
+                <a href="https://twitter.com/purgex_xyz" target="_blank">Twitter/X</a>
+                <a href="https://discord.gg/purgex" target="_blank">Discord</a>
+                <a href="mailto:hello@purgex.xyz">Contact</a>
+              </div>
+            </div>
+            
+            <div class="footer-section">
+              <h4>Contract</h4>
+              <p class="contract-address">
+                PRGX: <code class="address-text" data-action="copy" 
+                       data-address="0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0">
+                  0x352b...A07d0
+                </code>
+              </p>
+              <button class="btn btn-secondary btn-small add-token-btn" data-action="add-token">
+                Add to Wallet
+              </button>
+            </div>
+          </div>
+          
+          <div class="footer-bottom">
+            <p>&copy; 2026 PurgeX. MIT License. No warranty.</p>
+          </div>
+        </div>
+      </footer>
+
+      <!-- Scripts -->
+      <script src="js/config.js"></script>
+      <script src="js/app.js"></script>
+    </body>
+    </html>

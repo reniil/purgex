@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>USD Value Implementation Test - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>💰 USD Value Implementation Test</h1>
+    
+    <div class="card">
+      <h2>New Feature Implemented</h2>
+      <div class="features-list">
+        <div>✅ Added fetchPRGXPrice() function</div>
+        <div>✅ Added calculateUSDValue() function</div>
+        <div>✅ Updated UI to show "Estimated USD:"</div>
+        <div>✅ Real-time price fetching from PulseScan API</div>
+        <div>✅ Error handling for price fetch failures</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>API Integration</h2>
+      <div class="api-info">
+        <div><strong>Endpoint:</strong> PulseScan API</div>
+        <div><strong>Contract:</strong> 0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0</div>
+        <div><strong>Format:</strong> PRGX amount × USD price = USD value</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test USD Value Feature</h2>
+      <button class="btn btn-primary" onclick="testUSDValue()">
+        💰 Test USD Value
+      </button>
+      <button class="btn btn-secondary" onclick="clearResults()">
+        Clear Results
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Expected Results</h2>
+      <ul>
+        <li>✅ Shows "Estimated USD: $X.XX" in sweep summary</li>
+        <li>✅ Fetches live PRGX price from API</li>
+        <li>✅ Calculates USD value correctly</li>
+        <li>✅ Handles API errors gracefully</li>
+        <li>✅ Console logs price and calculation</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Debug Console</h2>
+      <div id="debug-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 400px; overflow-y: auto; color: #10b981;">
+        Ready for testing...
+      </div>
+      <button class="btn btn-secondary" onclick="clearDebug()">Clear Debug</button>
+    </div>
+  </div>
+
+  <script>
+    function debug(message, type = 'info') {
+      const output = document.getElementById('debug-output');
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+      const div = document.createElement('div');
+      div.style.color = color;
+      div.textContent = `[${timestamp}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearDebug() {
+      document.getElementById('debug-output').innerHTML = '';
+    }
+
+    function clearResults() {
+      clearDebug();
+    }
+
+    async function testUSDValue() {
+      if (!window.purgeXApp || !window.purgeXApp.signer) {
+        debug('❌ Please connect wallet first', 'error');
+        return;
+      }
+
+      if (!window.dustSweeper) {
+        debug('❌ Dust sweeper not loaded', 'error');
+        return;
+      }
+
+      debug('💰 Starting USD value implementation test...');
+      
+      try {
+        // Test 1: Test price fetching directly
+        debug('📡 Testing price fetching...');
+        const price = await window.dustSweeper.fetchPRGXPrice();
+        debug(`✅ Fetched PRGX price: $${price}`);
+        
+        if (price > 0) {
+          debug('✅ Price fetching successful');
+        } else {
+          debug('⚠️ Price returned 0 (API might be down)');
+        }
+
+        // Load tokens
+        debug('🔍 Loading tokens...');
+        await window.dustSweeper.loadTokenList();
+        
+        const tokenCount = window.dustSweeper.tokens.length;
+        if (tokenCount === 0) {
+          debug('⚠️ No tokens found for testing');
+          return;
+        }
+        
+        debug(`✅ Found ${tokenCount} tokens`);
+
+        // Test 2: Select a token to trigger USD calculation
+        debug('🔄 Selecting token to test USD calculation...');
+        const firstCheckbox = document.querySelector('.token-checkbox');
+        if (firstCheckbox) {
+          firstCheckbox.click();
+          
+          setTimeout(() => {
+            // Test 3: Check if USD value appears
+            debug('📊 Checking USD value display...');
+            const summaryEl = document.getElementById('sweep-summary');
+            if (summaryEl) {
+              const summaryContent = summaryEl.innerHTML;
+              
+              if (summaryContent.includes('Estimated USD:')) {
+                debug('✅ "Estimated USD:" text found in summary');
+              } else {
+                debug('❌ "Estimated USD:" text not found', 'error');
+              }
+              
+              if (summaryContent.includes('$')) {
+                debug('✅ USD value with $ symbol found');
+              } else {
+                debug('❌ USD value with $ symbol not found', 'error');
+              }
+              
+              // Extract USD value
+              const usdMatch = summaryContent.match(/\$(\d+\.\d+)/);
+              if (usdMatch) {
+                debug(`✅ USD value extracted: $${usdMatch[1]}`);
+              } else {
+                debug('❌ Could not extract USD value', 'error');
+              }
+            }
+            
+            // Test 4: Test calculation directly
+            debug('🧮 Testing USD calculation directly...');
+            const estimatedPRGX = window.dustSweeper.calculateEstimatedPRGX();
+            debug(`✅ Estimated PRGX: ${estimatedPRGX}`);
+            
+            const usdValue = await window.dustSweeper.calculateUSDValue(estimatedPRGX);
+            debug(`✅ Calculated USD value: $${usdValue}`);
+            
+            if (usdValue !== '0.00' && price > 0) {
+              debug('✅ USD calculation working correctly');
+            } else if (price === 0) {
+              debug('⚠️ USD calculation returned 0 due to price fetch failure');
+            } else {
+              debug('❌ USD calculation failed', 'error');
+            }
+            
+            debug('🎉 All USD value implementation tests completed!');
+            
+          }, 1000);
+        } else {
+          debug('❌ No token checkbox found', 'error');
+        }
+        
+      } catch (error) {
+        debug(`❌ Test failed: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      debug(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      debug(args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      debug(args.join(' '), 'warn');
+    };
+
+    // Initialize
+    window.addEventListener('load', () => {
+      debug('USD value implementation test page loaded');
+      debug(`Ethers.js version: ${ethers.version || 'v6.x'}`);
+      debug(`Config loaded: ${!!window.CONFIG}`);
+      debug(`App initialized: ${!!window.purgeXApp}`);
+      debug(`Dust sweeper loaded: ${!!window.dustSweeper}`);
+    });
+  </script>
+</body>
+</html>

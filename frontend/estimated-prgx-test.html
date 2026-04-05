@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estimated PRGX Display Test - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>💰 Estimated PRGX Display Test</h1>
+    
+    <div class="card">
+      <h2>Issue Fixed</h2>
+      <div class="issues-fixed">
+        <div>✅ Fixed selector: .sweep-summary → #sweep-summary</div>
+        <div>✅ Added debugging logs for calculation</div>
+        <div>✅ Enhanced Map iteration with address parameter</div>
+        <div>✅ Improved error handling and logging</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test Estimated PRGX Display</h2>
+      <button class="btn btn-primary" onclick="testEstimatedPRGX()">
+        💰 Test PRGX Display
+      </button>
+      <button class="btn btn-secondary" onclick="clearResults()">
+        Clear Results
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Expected Results</h2>
+      <ul>
+        <li>✅ Sweep summary shows "Selected: X tokens"</li>
+        <li>✅ Sweep summary shows "Estimated PRGX out: X.XXXX PRGX"</li>
+        <li>✅ Sweep summary shows "Protocol fee: 5%"</li>
+        <li>✅ Console shows calculation logs</li>
+        <li>✅ Button updates to "PURGE X TOKENS"</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Debug Console</h2>
+      <div id="debug-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 400px; overflow-y: auto; color: #10b981;">
+        Ready for testing...
+      </div>
+      <button class="btn btn-secondary" onclick="clearDebug()">Clear Debug</button>
+    </div>
+  </div>
+
+  <script>
+    function debug(message, type = 'info') {
+      const output = document.getElementById('debug-output');
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+      const div = document.createElement('div');
+      div.style.color = color;
+      div.textContent = `[${timestamp}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearDebug() {
+      document.getElementById('debug-output').innerHTML = '';
+    }
+
+    function clearResults() {
+      clearDebug();
+    }
+
+    async function testEstimatedPRGX() {
+      if (!window.purgeXApp || !window.purgeXApp.signer) {
+        debug('❌ Please connect wallet first', 'error');
+        return;
+      }
+
+      if (!window.dustSweeper) {
+        debug('❌ Dust sweeper not loaded', 'error');
+        return;
+      }
+
+      debug('💰 Starting estimated PRGX display test...');
+      
+      try {
+        // Load tokens first
+        debug('🔍 Loading tokens...');
+        await window.dustSweeper.loadTokenList();
+        
+        const tokenCount = window.dustSweeper.tokens.length;
+        if (tokenCount === 0) {
+          debug('⚠️ No tokens found for testing');
+          return;
+        }
+        
+        debug(`✅ Found ${tokenCount} tokens`);
+
+        // Test 1: Check if sweep summary element exists
+        debug('📋 Checking sweep summary element...');
+        const summaryEl = document.getElementById('sweep-summary');
+        if (summaryEl) {
+          debug('✅ Sweep summary element found');
+        } else {
+          debug('❌ Sweep summary element not found', 'error');
+          return;
+        }
+
+        // Test 2: Select first token
+        debug('🔄 Selecting first token...');
+        const firstCheckbox = document.querySelector('.token-checkbox');
+        if (firstCheckbox) {
+          firstCheckbox.click();
+          
+          setTimeout(() => {
+            // Test 3: Check summary content
+            debug('📊 Checking summary content...');
+            const summaryContent = summaryEl.innerHTML;
+            debug(`Summary HTML: ${summaryContent.substring(0, 200)}...`);
+            
+            // Test 4: Check for specific elements
+            if (summaryContent.includes('Selected:')) {
+              debug('✅ "Selected:" text found');
+            } else {
+              debug('❌ "Selected:" text not found', 'error');
+            }
+            
+            if (summaryContent.includes('Estimated PRGX out:')) {
+              debug('✅ "Estimated PRGX out:" text found');
+            } else {
+              debug('❌ "Estimated PRGX out:" text not found', 'error');
+            }
+            
+            if (summaryContent.includes('Protocol fee:')) {
+              debug('✅ "Protocol fee:" text found');
+            } else {
+              debug('❌ "Protocol fee:" text not found', 'error');
+            }
+            
+            if (summaryContent.includes('5%')) {
+              debug('✅ "5%" fee displayed');
+            } else {
+              debug('❌ "5%" fee not displayed', 'error');
+            }
+            
+            // Test 5: Check button state
+            debug('🔘 Checking button state...');
+            const sweepBtn = document.querySelector('.sweep-btn');
+            if (sweepBtn) {
+              debug(`✅ Button text: "${sweepBtn.textContent}"`);
+              debug(`✅ Button disabled: ${sweepBtn.disabled}`);
+              
+              if (!sweepBtn.disabled && sweepBtn.textContent.includes('PURGE')) {
+                debug('✅ Button properly enabled and updated');
+              } else {
+                debug('❌ Button not properly updated', 'error');
+              }
+            } else {
+              debug('❌ Sweep button not found', 'error');
+            }
+            
+            // Test 6: Test calculation directly
+            debug('🧮 Testing calculation directly...');
+            const estimatedValue = window.dustSweeper.calculateEstimatedPRGX();
+            debug(`✅ Direct calculation result: ${estimatedValue} PRGX`);
+            
+            if (estimatedValue > 0) {
+              debug('✅ Calculation returns positive value');
+            } else {
+              debug('❌ Calculation returns zero or negative', 'error');
+            }
+            
+            debug('🎉 All estimated PRGX display tests completed!');
+            
+          }, 500);
+        } else {
+          debug('❌ No token checkbox found', 'error');
+        }
+        
+      } catch (error) {
+        debug(`❌ Test failed: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      debug(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      debug(args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      debug(args.join(' '), 'warn');
+    };
+
+    // Initialize
+    window.addEventListener('load', () => {
+      debug('Estimated PRGX display test page loaded');
+      debug(`Ethers.js version: ${ethers.version || 'v6.x'}`);
+      debug(`Config loaded: ${!!window.CONFIG}`);
+      debug(`App initialized: ${!!window.purgeXApp}`);
+      debug(`Dust sweeper loaded: ${!!window.dustSweeper}`);
+    });
+  </script>
+</body>
+</html>

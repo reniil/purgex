@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contracts & Security - PurgeX</title>
+  <meta name="description" content="Verified PurgeX contracts, multisig treasury, and security features">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="index.html" class="logo">
+          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M8 6V3a1 1 0 011-1h6a1 1 0 011 1v3M8 6l2 2m-2-2l2-2M15 6l-2 2m2-2l-2-2"/>
+            <circle cx="12" cy="18" r="2"/>
+            <line x1="12" y1="14" x2="12" y2="16"/>
+          </svg>
+          <span>PurgeX</span>
+        </a>
+        
+        <nav class="nav">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sweep.html" class="nav-link">Sweep</a>
+          <a href="staking.html" class="nav-link">Staking</a>
+          <a href="tokenomics.html" class="nav-link">Tokenomics</a>
+          <a href="contracts.html" class="nav-link active">Contracts</a>
+          <a href="about.html" class="nav-link">About</a>
+          
+          <div class="nav-actions">
+            <button class="btn btn-secondary btn-small connect-wallet-btn" data-action="connect-wallet">
+              Connect Wallet
+            </button>
+            <div class="account-info" style="display: none;">
+              <span class="wallet-address" data-action="copy">0x0000...0000</span>
+              <button class="btn btn-secondary btn-small disconnect-wallet-btn" data-action="disconnect-wallet">
+                Disconnect
+              </button>
+            </div>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="container">
+      <!-- Page Header -->
+      <section class="page-header">
+        <h1>Contracts & Security</h1>
+        <p>All contracts verified, audited, and secured with multisig governance</p>
+      </section>
+
+      <!-- Verified Contracts -->
+      <section class="verified-contracts">
+        <h2>Verified Contracts</h2>
+        <div class="contracts-table">
+          <div class="table-header">
+            <div>Contract</div>
+            <div>Address</div>
+            <div>Status</div>
+            <div>Link</div>
+          </div>
+          
+          <div class="table-row">
+            <div class="contract-info">
+              <div class="contract-name">PRGX Token</div>
+              <div class="contract-type">ERC20</div>
+            </div>
+            <div class="contract-address">
+              <code data-action="copy" data-address="0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0">
+                0x352b...A07d0
+              </code>
+            </div>
+            <div class="contract-status">
+              <span class="status-badge success">✅ Verified</span>
+            </div>
+            <div class="contract-link">
+              <a href="https://scan.pulsechain.com/address/0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0" 
+                 target="_blank" class="btn btn-secondary btn-small">
+                PulseScan
+              </a>
+            </div>
+          </div>
+          
+          <div class="table-row">
+            <div class="contract-info">
+              <div class="contract-name">Sweeper Contract</div>
+              <div class="contract-type">Dust Sweeper</div>
+            </div>
+            <div class="contract-address">
+              <code data-action="copy" data-address="0xc6735B24D5A082E0A75637179A76ecE8a1aE1575">
+                0xc673...1575
+              </code>
+            </div>
+            <div class="contract-status">
+              <span class="status-badge success">✅ Verified</span>
+            </div>
+            <div class="contract-link">
+              <a href="https://scan.pulsechain.com/address/0xc6735B24D5A082E0A75637179A76ecE8a1aE1575" 
+                 target="_blank" class="btn btn-secondary btn-small">
+                PulseScan
+              </a>
+            </div>
+          </div>
+          
+          <div class="table-row">
+            <div class="contract-info">
+              <div class="contract-name">Staking Contract</div>
+              <div class="contract-type">Reward Staking</div>
+            </div>
+            <div class="contract-address">
+              <code data-action="copy" data-address="0x7FaB14198ae87E6ad95C785E61f14b68D175317B">
+                0x7FaB...317B
+              </code>
+            </div>
+            <div class="contract-status">
+              <span class="status-badge success">✅ Verified</span>
+            </div>
+            <div class="contract-link">
+              <a href="https://scan.pulsechain.com/address/0x7FaB14198ae87E6ad95C785E61f14b68D175317B" 
+                 target="_blank" class="btn btn-secondary btn-small">
+                PulseScan
+              </a>
+            </div>
+          </div>
+          
+          <div class="table-row">
+            <div class="contract-info">
+              <div class="contract-name">Multisig Treasury</div>
+              <div class="contract-type">3/5 Safe</div>
+            </div>
+            <div class="contract-address">
+              <code data-action="copy" data-address="0xa3C05e032DC179C7BC801C65F35563c8382CF01A">
+                0xa3C0...F01A
+              </code>
+            </div>
+            <div class="contract-status">
+              <span class="status-badge success">✅ 3/5</span>
+            </div>
+            <div class="contract-link">
+              <a href="https://scan.pulsechain.com/address/0xa3C05e032DC179C7BC801C65F35563c8382CF01A" 
+                 target="_blank" class="btn btn-secondary btn-small">
+                PulseScan
+              </a>
+            </div>
+          </div>
+          
+          <div class="table-row">
+            <div class="contract-info">
+              <div class="contract-name">LP Tokens</div>
+              <div class="contract-type">PulseX Pool</div>
+            </div>
+            <div class="contract-address">
+              <code data-action="copy" data-address="0xc76f9b605a929a35f1a6d8b200630e84e27caaeb">
+                0xc76f...aaeb
+              </code>
+            </div>
+            <div class="contract-status">
+              <span class="status-badge success">✅ Locked</span>
+            </div>
+            <div class="contract-link">
+              <a href="https://scan.pulsechain.com/address/0xc76f9b605a929a35f1a6d8b200630e84e27caaeb" 
+                 target="_blank" class="btn btn-secondary btn-small">
+                PulseScan
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Security Features -->
+      <section class="security-features">
+        <h2>Security Features</h2>
+        <div class="security-grid">
+          <div class="security-card">
+            <div class="security-icon">🔍</div>
+            <h3>Verified Contracts</h3>
+            <p>All smart contracts verified on PulseScan with source code available</p>
+          </div>
+          
+          <div class="security-card">
+            <div class="security-icon">🏛️</div>
+            <h3>Multisig Treasury</h3>
+            <p>3/5 multisig controls 250M PRGX - no single point of failure</p>
+          </div>
+          
+          <div class="security-card">
+            <div class="security-icon">🔒</div>
+            <h3>LP Tokens Locked</h3>
+            <p>500M PRGX liquidity locked for 2+ years via DXLock platform</p>
+          </div>
+          
+          <div class="security-card">
+            <div class="security-icon">⛔</div>
+            <h3>No Admin Functions</h3>
+            <p>No mint/burn functions after deployment - fixed supply</p>
+          </div>
+          
+          <div class="security-card">
+            <div class="security-icon">⏱️</div>
+            <h3>Timelock Ready</h3>
+            <p>Infrastructure ready for timelock implementation</p>
+          </div>
+          
+          <div class="security-card">
+            <div class="security-icon">📖</div>
+            <h3>Open Source</h3>
+            <p>MIT license - all code publicly available on GitHub</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fee Structure -->
+      <section class="fee-structure">
+        <h2>Fee Structure</h2>
+        <div class="fee-card card">
+          <div class="fee-item">
+            <div class="fee-label">Sweep Fee</div>
+            <div class="fee-value">1% (in input token)</div>
+          </div>
+          <div class="fee-description">
+            <p>1% fee charged on dust token sweeps, collected in the swept tokens</p>
+          </div>
+          
+          <div class="fee-item">
+            <div class="fee-label">Fee Recipient</div>
+            <div class="fee-value">Multisig Treasury</div>
+          </div>
+          <div class="fee-description">
+            <p>All fees go directly to the multisig treasury for community benefit</p>
+          </div>
+          
+          <div class="fee-item">
+            <div class="fee-label">Treasury Control</div>
+            <div class="fee-value">100% Community</div>
+          </div>
+          <div class="fee-description">
+            <p>100% of treasury controlled by multisig - no team extraction</p>
+          </div>
+          
+          <div class="fee-item">
+            <div class="fee-label">Staking Rewards</div>
+            <div class="fee-value">6.4 PRGX/second</div>
+          </div>
+          <div class="fee-description">
+            <p>Continuous rewards distributed to stakers from staking contract</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Liquidity Lock Information -->
+      <section class="liquidity-lock">
+        <h2>Liquidity Lock Details</h2>
+        <div class="lock-info card">
+          <div class="lock-item">
+            <div class="lock-label">LP Tokens Locked</div>
+            <div class="lock-value">500M PRGX</div>
+          </div>
+          <div class="lock-description">
+            <p>500M PRGX tokens locked in PRGX/PLS liquidity pool</p>
+          </div>
+          
+          <div class="lock-item">
+            <div class="lock-label">Lock Duration</div>
+            <div class="lock-value">2+ Years</div>
+          </div>
+          <div class="lock-description">
+            <p>Tokens locked via DXLock platform until 2028+</p>
+          </div>
+          
+          <div class="lock-item">
+            <div class="lock-label">LP Token Contract</div>
+            <div class="lock-value">
+              <code class="address-text" data-action="copy" 
+                    data-address="0xc76f9b605a929a35f1a6d8b200630e84e27caaeb">
+                0xc76f...aaeb
+              </code>
+            </div>
+          </div>
+          <div class="lock-description">
+            <p>PulseX LP token contract address for verification</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Audits -->
+      <section class="audits">
+        <h2>Security Audits</h2>
+        <div class="audit-card card">
+          <div class="audit-header">
+            <h3>Internal Security Review</h3>
+            <span class="audit-status success">✅ Completed</span>
+          </div>
+          <div class="audit-details">
+            <p><strong>Lead Auditor:</strong> Pepe (Security Lead)</p>
+            <p><strong>Scope:</strong> All smart contracts, tokenomics, and economic model</p>
+            <p><strong>Findings:</strong> 0 critical, 0 high, 1 medium (resolved), 2 low (resolved)</p>
+            <p><strong>Status:</strong> All issues resolved and contracts redeployed</p>
+          </div>
+          
+          <div class="audit-note">
+            <p>External audits planned for Q3 2026 as TVL grows</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Contract Interactions -->
+      <section class="contract-interactions">
+        <h2>Contract Interaction Guide</h2>
+        <div class="interaction-grid">
+          <div class="interaction-card">
+            <h3>Sweeper Contract</h3>
+            <div class="interaction-code">
+              <code>sweepTokens(address[] tokens, uint256[] minAmountsOut)</code>
+            </div>
+            <p>Bulk sweep multiple dust tokens in a single transaction</p>
+          </div>
+          
+          <div class="interaction-card">
+            <h3>Staking Contract</h3>
+            <div class="interaction-code">
+              <code>stake(uint256 amount) | withdraw(uint256) | claimReward()</code>
+            </div>
+            <p>Stake PRGX, withdraw anytime, claim rewards continuously</p>
+          </div>
+          
+          <div class="interaction-card">
+            <h3>PRGX Token</h3>
+            <div class="interaction-code">
+              <code>approve(address spender, uint256 amount) | transfer(address to, uint256 amount)</code>
+            </div>
+            <p>Standard ERC20 with fixed supply and burn capability</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-section">
+          <h4>PurgeX</h4>
+          <p>Sweep dust. Earn PRGX.</p>
+          <div class="footer-links">
+            <a href="index.html">Home</a>
+            <a href="sweep.html">Sweep</a>
+            <a href="staking.html">Staking</a>
+            <a href="tokenomics.html">Tokenomics</a>
+          </div>
+        </div>
+        
+        <div class="footer-section">
+          <h4>Resources</h4>
+          <div class="footer-links">
+            <a href="https://scan.pulsechain.com" target="_blank">PulseScan</a>
+            <a href="https://pulsex.com" target="_blank">PulseX</a>
+            <a href="https://github.com/reniil/purgex" target="_blank">GitHub</a>
+            <a href="contracts.html">Contracts</a>
+          </div>
+        </div>
+        
+        <div class="footer-section">
+          <h4>Community</h4>
+          <div class="footer-links">
+            <a href="https://twitter.com/purgex_xyz" target="_blank">Twitter/X</a>
+            <a href="https://discord.gg/purgex" target="_blank">Discord</a>
+            <a href="mailto:hello@purgex.xyz">Contact</a>
+          </div>
+        </div>
+        
+        <div class="footer-section">
+          <h4>Contract</h4>
+          <p class="contract-address">
+            PRGX: <code class="address-text" data-action="copy" 
+                   data-address="0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0">
+              0x352b...A07d0
+            </code>
+          </p>
+          <button class="btn btn-secondary btn-small add-token-btn" data-action="add-token">
+            Add to Wallet
+          </button>
+        </div>
+      </div>
+      
+      <div class="footer-bottom">
+        <p>&copy; 2026 PurgeX. MIT License. No warranty.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

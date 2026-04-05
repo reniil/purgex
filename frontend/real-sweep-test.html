@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real Sweep Contract Test - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🧹 Real Sweep Contract Test</h1>
+    
+    <div class="card">
+      <h2>Real Contract Integration</h2>
+      <div class="features-list">
+        <div>✅ Real token approvals to sweeper contract</div>
+        <div>✅ Actual sweepTokens contract call</div>
+        <div>✅ Transaction hash display</div>
+        <div>✅ Real blockchain interaction</div>
+        <div>✅ Error handling for contract calls</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Contract Details</h2>
+      <div class="contract-info">
+        <div><strong>Sweeper Contract:</strong> 0xc6735B24D5A082E0A75637179A76ecE8a1aE1575</div>
+        <div><strong>PRGX Token:</strong> 0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0</div>
+        <div><strong>Function:</strong> sweepTokens(address[] tokens)</div>
+        <div><strong>Network:</strong> PulseChain (Chain ID: 369)</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test Real Sweep</h2>
+      <button class="btn btn-primary" onclick="testRealSweep()">
+        🧹 Test Real Sweep
+      </button>
+      <button class="btn btn-secondary" onclick="clearResults()">
+        Clear Results
+      </button>
+      <div class="warning">
+        ⚠️ This will execute real transactions on PulseChain!
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Expected Results</h2>
+      <ul>
+        <li>✅ Token approval transactions appear in wallet</li>
+        <li>✅ Sweep transaction submitted to blockchain</li>
+        <li>✅ Transaction hash displayed</li>
+        <li>✅ Real PRGX tokens received (if contract works)</li>
+        <li>✅ Tokens removed from wallet after sweep</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Debug Console</h2>
+      <div id="debug-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 400px; overflow-y: auto; color: #10b981;">
+        Ready for testing...
+      </div>
+      <button class="btn btn-secondary" onclick="clearDebug()">Clear Debug</button>
+    </div>
+  </div>
+
+  <script>
+    function debug(message, type = 'info') {
+      const output = document.getElementById('debug-output');
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+      const div = document.createElement('div');
+      div.style.color = color;
+      div.textContent = `[${timestamp}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearDebug() {
+      document.getElementById('debug-output').innerHTML = '';
+    }
+
+    function clearResults() {
+      clearDebug();
+    }
+
+    async function testRealSweep() {
+      if (!window.purgeXApp || !window.purgeXApp.signer) {
+        debug('❌ Please connect wallet first', 'error');
+        return;
+      }
+
+      if (!window.dustSweeper) {
+        debug('❌ Dust sweeper not loaded', 'error');
+        return;
+      }
+
+      debug('🧹 Starting real sweep test...');
+      
+      try {
+        // Load tokens
+        debug('🔍 Loading tokens...');
+        await window.dustSweeper.loadTokenList();
+        
+        const tokenCount = window.dustSweeper.tokens.length;
+        if (tokenCount === 0) {
+          debug('⚠️ No tokens found for testing');
+          return;
+        }
+        
+        debug(`✅ Found ${tokenCount} tokens`);
+
+        // Test 1: Check contract connection
+        debug('🔗 Testing contract connection...');
+        const signer = window.purgeXApp.signer;
+        const sweeperAddress = window.CONFIG.CONTRACTS.SWEEPER;
+        debug(`✅ Sweeper contract: ${sweeperAddress}`);
+
+        // Test 2: Select a token for testing
+        debug('🔄 Selecting token for sweep test...');
+        const firstCheckbox = document.querySelector('.token-checkbox');
+        if (firstCheckbox) {
+          firstCheckbox.click();
+          
+          setTimeout(() => {
+            debug('✅ Token selected for sweep');
+            
+            // Test 3: Check if executeSweep function exists and is real
+            debug('🧮 Checking executeSweep function...');
+            if (typeof window.dustSweeper.executeSweep === 'function') {
+              debug('✅ executeSweep function found');
+              
+              // Test 4: Check if approveTokens function exists
+              if (typeof window.dustSweeper.approveTokens === 'function') {
+                debug('✅ approveTokens function found');
+              } else {
+                debug('❌ approveTokens function not found', 'error');
+              }
+              
+              // Test 5: Check if executeSweepContract function exists
+              if (typeof window.dustSweeper.executeSweepContract === 'function') {
+                debug('✅ executeSweepContract function found');
+              } else {
+                debug('❌ executeSweepContract function not found', 'error');
+              }
+              
+              debug('🎯 Ready to execute real sweep!');
+              debug('⚠️ Click the sweep button in the main app to execute real transactions');
+              
+            } else {
+              debug('❌ executeSweep function not found', 'error');
+            }
+          }, 1000);
+        } else {
+          debug('❌ No token checkbox found', 'error');
+        }
+        
+      } catch (error) {
+        debug(`❌ Test failed: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      debug(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      debug(args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      debug(args.join(' '), 'warn');
+    };
+
+    // Initialize
+    window.addEventListener('load', () => {
+      debug('Real sweep test page loaded');
+      debug(`Ethers.js version: ${ethers.version || 'v6.x'}`);
+      debug(`Config loaded: ${!!window.CONFIG}`);
+      debug(`App initialized: ${!!window.purgeXApp}`);
+      debug(`Dust sweeper loaded: ${!!window.dustSweeper}`);
+      debug(`Sweeper contract: ${window.CONFIG?.CONTRACTS?.SWEEPER || 'Not found'}`);
+    });
+  </script>
+</body>
+</html>

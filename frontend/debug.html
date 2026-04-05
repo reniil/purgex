@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+  <script src="js/staking.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Debug Page</h1>
+    
+    <div class="card">
+      <h2>Wallet Connection</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+        <button class="btn btn-secondary disconnect-wallet-btn" data-action="disconnect-wallet">
+          Disconnect
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Staking Test</h2>
+      <div class="staking-stats">
+        <div class="stat-card">
+          <div class="stat-label">Your Staked PRGX</div>
+          <div class="stat-value highlight user-staked">-- PRGX</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending Rewards</div>
+          <div class="stat-value accent pending-rewards">-- PRGX</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Console Output</h2>
+      <div id="console-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 200px; overflow-y: auto;">
+        <!-- Debug output will appear here -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Override console.log to show in page
+    const originalLog = console.log;
+    const originalError = console.error;
+    
+    function addToOutput(message, type = 'log') {
+      const output = document.getElementById('console-output');
+      const div = document.createElement('div');
+      div.style.color = type === 'error' ? '#ef4444' : '#10b981';
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      addToOutput(args.join(' '), 'log');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      addToOutput(args.join(' '), 'error');
+    };
+    
+    // Test ethers methods
+    window.addEventListener('load', () => {
+      console.log('Debug page loaded');
+      console.log('Ethers version:', ethers.version);
+      console.log('Config loaded:', !!window.CONFIG);
+      console.log('App initialized:', !!window.purgeXApp);
+    });
+  </script>
+</body>
+</html>

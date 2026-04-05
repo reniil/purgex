@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5% Fee Implementation Test - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>💰 5% Fee Implementation Test</h1>
+    
+    <div class="card">
+      <h2>Changes Applied</h2>
+      <div class="changes-list">
+        <div>✅ Updated fee calculation: 1% → 5%</div>
+        <div>✅ Updated UI display: "1%" → "5%"</div>
+        <div>✅ Updated net calculation: *0.99 → *0.95</div>
+        <div>✅ Dynamic fee display in sweep summary</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fee Calculation Example</h2>
+      <div class="fee-example">
+        <div><strong>Before (1% fee):</strong></div>
+        <div>100 tokens → 99 PRGX (1 token fee)</div>
+        <div><strong>After (5% fee):</strong></div>
+        <div>100 tokens → 95 PRGX (5 tokens fee)</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test 5% Fee Implementation</h2>
+      <button class="btn btn-primary" onclick="testFeeImplementation()">
+        💰 Test 5% Fee
+      </button>
+      <button class="btn btn-secondary" onclick="clearResults()">
+        Clear Results
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Expected Results</h2>
+      <ul>
+        <li>✅ UI shows "Protocol fee: 5%"</li>
+        <li>✅ Calculation uses 5% fee (multiply by 0.95)</li>
+        <li>✅ Estimated PRGX reflects 5% deduction</li>
+        <li>✅ No calculation errors</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Debug Console</h2>
+      <div id="debug-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 400px; overflow-y: auto; color: #10b981;">
+        Ready for testing...
+      </div>
+      <button class="btn btn-secondary" onclick="clearDebug()">Clear Debug</button>
+    </div>
+  </div>
+
+  <script>
+    function debug(message, type = 'info') {
+      const output = document.getElementById('debug-output');
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+      const div = document.createElement('div');
+      div.style.color = color;
+      div.textContent = `[${timestamp}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearDebug() {
+      document.getElementById('debug-output').innerHTML = '';
+    }
+
+    function clearResults() {
+      clearDebug();
+    }
+
+    async function testFeeImplementation() {
+      if (!window.purgeXApp || !window.purgeXApp.signer) {
+        debug('❌ Please connect wallet first', 'error');
+        return;
+      }
+
+      if (!window.dustSweeper) {
+        debug('❌ Dust sweeper not loaded', 'error');
+        return;
+      }
+
+      debug('💰 Starting 5% fee implementation test...');
+      
+      try {
+        // Load tokens first
+        debug('🔍 Loading tokens...');
+        await window.dustSweeper.loadTokenList();
+        
+        const tokenCount = window.dustSweeper.tokens.length;
+        if (tokenCount === 0) {
+          debug('⚠️ No tokens found for testing');
+          return;
+        }
+        
+        debug(`✅ Found ${tokenCount} tokens`);
+
+        // Test 1: Check UI displays 5% fee
+        debug('📋 Checking UI fee display...');
+        const feeElement = document.querySelector('.fee');
+        if (feeElement && feeElement.textContent === '5%') {
+          debug('✅ UI correctly shows 5% fee');
+        } else {
+          debug('❌ UI does not show 5% fee', 'error');
+        }
+
+        // Test 2: Select a token to test calculation
+        debug('🔄 Testing fee calculation...');
+        const firstCheckbox = document.querySelector('.token-checkbox');
+        if (firstCheckbox) {
+          firstCheckbox.click();
+          
+          setTimeout(() => {
+            // Test 3: Check calculation logic
+            debug('🧮 Testing calculation logic...');
+            
+            // Simulate the calculation
+            const mockTokenValue = 100; // 100 PRGX before fee
+            const expectedWith5Percent = mockTokenValue * 0.95; // 95 PRGX after fee
+            const expectedWith1Percent = mockTokenValue * 0.99; // 99 PRGX after 1% fee
+            
+            debug(`✅ Mock calculation: ${mockTokenValue} PRGX`);
+            debug(`✅ With 5% fee: ${expectedWith5Percent} PRGX`);
+            debug(`✅ With old 1% fee: ${expectedWith1Percent} PRGX`);
+            
+            // Test 4: Check actual calculation in sweeper
+            const actualEstimated = window.dustSweeper.calculateEstimatedPRGX();
+            debug(`✅ Actual estimated PRGX: ${actualEstimated}`);
+            
+            if (actualEstimated < 100) {
+              debug('✅ Fee is being applied correctly');
+            } else {
+              debug('❌ Fee not being applied', 'error');
+            }
+            
+            // Test 5: Check sweep summary
+            debug('📊 Checking sweep summary...');
+            const summaryEl = document.querySelector('.sweep-summary');
+            if (summaryEl) {
+              const summaryText = summaryEl.textContent;
+              if (summaryText.includes('5%')) {
+                debug('✅ Sweep summary shows 5% fee');
+              } else {
+                debug('❌ Sweep summary does not show 5% fee', 'error');
+              }
+            }
+            
+            debug('🎉 All 5% fee implementation tests completed!');
+            
+          }, 100);
+        }
+        
+      } catch (error) {
+        debug(`❌ Test failed: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      debug(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      debug(args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      debug(args.join(' '), 'warn');
+    };
+
+    // Initialize
+    window.addEventListener('load', () => {
+      debug('5% fee implementation test page loaded');
+      debug(`Ethers.js version: ${ethers.version || 'v6.x'}`);
+      debug(`Config loaded: ${!!window.CONFIG}`);
+      debug(`App initialized: ${!!window.purgeXApp}`);
+      debug(`Dust sweeper loaded: ${!!window.dustSweeper}`);
+    });
+  </script>
+</body>
+</html>

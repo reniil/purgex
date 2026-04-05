@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select All Test - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🧹 Select All Test</h1>
+    
+    <div class="card">
+      <h2>Fixes Applied</h2>
+      <div class="fixes-list">
+        <div>✅ Updated toggleSelectAll to work with new system</div>
+        <div>✅ Fixed handleTokenSelection to update button text</div>
+        <div>✅ Added proper event listener management</div>
+        <div>✅ Reset button state on re-render</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test Select All</h2>
+      <button class="btn btn-primary" onclick="testSelectAll()">
+        🧪 Test Select All Function
+      </button>
+      <button class="btn btn-secondary" onclick="clearResults()">
+        Clear Results
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Expected Results</h2>
+      <ul>
+        <li>✅ "Select All" button works with deduplicated tokens</li>
+        <li>✅ Button text changes to "Deselect All" when all selected</li>
+        <li>✅ Button text changes back to "Select All" when deselected</li>
+        <li>✅ Individual selection updates button text appropriately</li>
+        <li>✅ Sweep summary updates correctly</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Debug Console</h2>
+      <div id="debug-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 400px; overflow-y: auto; color: #10b981;">
+        Ready for testing...
+      </div>
+      <button class="btn btn-secondary" onclick="clearDebug()">Clear Debug</button>
+    </div>
+  </div>
+
+  <script>
+    function debug(message, type = 'info') {
+      const output = document.getElementById('debug-output');
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+      const div = document.createElement('div');
+      div.style.color = color;
+      div.textContent = `[${timestamp}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearDebug() {
+      document.getElementById('debug-output').innerHTML = '';
+    }
+
+    function clearResults() {
+      clearDebug();
+    }
+
+    async function testSelectAll() {
+      if (!window.purgeXApp || !window.purgeXApp.signer) {
+        debug('❌ Please connect wallet first', 'error');
+        return;
+      }
+
+      if (!window.dustSweeper) {
+        debug('❌ Dust sweeper not loaded', 'error');
+        return;
+      }
+
+      debug('🧪 Starting Select All test...');
+      
+      try {
+        // Load tokens first
+        debug('🔍 Loading tokens...');
+        await window.dustSweeper.loadTokenList();
+        
+        const tokenCount = window.dustSweeper.tokens.length;
+        if (tokenCount === 0) {
+          debug('⚠️ No tokens found for testing');
+          return;
+        }
+        
+        debug(`✅ Found ${tokenCount} tokens`);
+
+        // Test 1: Check initial button state
+        const selectAllBtn = document.querySelector('.select-all-btn');
+        if (selectAllBtn) {
+          debug(`✅ Initial button text: "${selectAllBtn.textContent}"`);
+        } else {
+          debug('❌ Select All button not found', 'error');
+        }
+
+        // Test 2: Click Select All
+        debug('🔄 Testing "Select All"...');
+        if (selectAllBtn) {
+          selectAllBtn.click();
+          
+          setTimeout(() => {
+            const selectedCount = window.dustSweeper.selectedTokens.size;
+            const buttonText = selectAllBtn.textContent;
+            
+            debug(`✅ After Select All: ${selectedCount}/${tokenCount} tokens selected`);
+            debug(`✅ Button text: "${buttonText}"`);
+            
+            if (selectedCount === tokenCount && buttonText === 'Deselect All') {
+              debug('✅ Select All worked correctly');
+            } else {
+              debug('❌ Select All failed', 'error');
+            }
+            
+            // Test 3: Click Deselect All
+            debug('🔄 Testing "Deselect All"...');
+            selectAllBtn.click();
+            
+            setTimeout(() => {
+              const deselectedCount = window.dustSweeper.selectedTokens.size;
+              const buttonText2 = selectAllBtn.textContent;
+              
+              debug(`✅ After Deselect All: ${deselectedCount}/${tokenCount} tokens selected`);
+              debug(`✅ Button text: "${buttonText2}"`);
+              
+              if (deselectedCount === 0 && buttonText2 === 'Select All') {
+                debug('✅ Deselect All worked correctly');
+              } else {
+                debug('❌ Deselect All failed', 'error');
+              }
+              
+              // Test 4: Test individual selection
+              debug('🔄 Testing individual selection...');
+              const firstCheckbox = document.querySelector('.token-checkbox');
+              if (firstCheckbox) {
+                firstCheckbox.click();
+                
+                setTimeout(() => {
+                  const individualCount = window.dustSweeper.selectedTokens.size;
+                  const buttonText3 = selectAllBtn.textContent;
+                  
+                  debug(`✅ After individual selection: ${individualCount}/${tokenCount} tokens selected`);
+                  debug(`✅ Button text: "${buttonText3}"`);
+                  
+                  if (individualCount === 1 && buttonText3 === 'Select All') {
+                    debug('✅ Individual selection works correctly');
+                  } else {
+                    debug('❌ Individual selection failed', 'error');
+                  }
+                  
+                  debug('🎉 All Select All tests completed!');
+                }, 100);
+              }
+            }, 100);
+          }, 100);
+        }
+        
+      } catch (error) {
+        debug(`❌ Test failed: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      debug(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      debug(args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      debug(args.join(' '), 'warn');
+    };
+
+    // Initialize
+    window.addEventListener('load', () => {
+      debug('Select All test page loaded');
+      debug(`Ethers.js version: ${ethers.version || 'v6.x'}`);
+      debug(`Config loaded: ${!!window.CONFIG}`);
+      debug(`App initialized: ${!!window.purgeXApp}`);
+      debug(`Dust sweeper loaded: ${!!window.dustSweeper}`);
+    });
+  </script>
+</body>
+</html>

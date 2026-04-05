@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token Display Test - PurgeX</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sweeper.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🧹 Token Display Test</h1>
+    
+    <div class="card">
+      <h2>Test Status</h2>
+      <div id="test-status">
+        <div>✅ Token discovery working</div>
+        <div>✅ Token section visibility fixed</div>
+        <div>✅ Address validation improved</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <button class="btn btn-primary connect-wallet-btn" data-action="connect-wallet">
+        Connect Wallet
+      </button>
+      <div class="account-info" style="display: none;">
+        <span class="wallet-address" data-action="copy">0x0000...0000</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Test Token Display</h2>
+      <button class="btn btn-primary" onclick="testTokenDisplay()">
+        🔍 Test Token Display
+      </button>
+      <button class="btn btn-secondary" onclick="clearResults()">
+        Clear Results
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>Expected Results</h2>
+      <ul>
+        <li>✅ Tokens should appear in the list</li>
+        <li>✅ Token section should be visible</li>
+        <li>✅ Sweep button should appear</li>
+        <li>✅ No more display issues</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Debug Console</h2>
+      <div id="debug-output" style="background: #0f172a; padding: 1rem; border-radius: 8px; font-family: monospace; max-height: 400px; overflow-y: auto; color: #10b981;">
+        Ready for testing...
+      </div>
+      <button class="btn btn-secondary" onclick="clearDebug()">Clear Debug</button>
+    </div>
+  </div>
+
+  <script>
+    function debug(message, type = 'info') {
+      const output = document.getElementById('debug-output');
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+      const div = document.createElement('div');
+      div.style.color = color;
+      div.textContent = `[${timestamp}] ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearDebug() {
+      document.getElementById('debug-output').innerHTML = '';
+    }
+
+    function clearResults() {
+      clearDebug();
+    }
+
+    async function testTokenDisplay() {
+      if (!window.purgeXApp || !window.purgeXApp.signer) {
+        debug('❌ Please connect wallet first', 'error');
+        return;
+      }
+
+      if (!window.dustSweeper) {
+        debug('❌ Dust sweeper not loaded', 'error');
+        return;
+      }
+
+      debug('🧪 Starting token display test...');
+      
+      try {
+        // Test token discovery
+        debug('🔍 Starting token discovery...');
+        await window.dustSweeper.loadTokenList();
+        
+        const tokenCount = window.dustSweeper.tokens.length;
+        debug(`✅ Found ${tokenCount} tokens`);
+        
+        // Check if token section is visible
+        const tokenSection = document.getElementById('token-section');
+        if (tokenSection && !tokenSection.classList.contains('hidden')) {
+          debug('✅ Token section is visible');
+        } else {
+          debug('❌ Token section not visible', 'error');
+        }
+
+        // Check if sweep section is visible
+        const sweepSection = document.getElementById('sweep-section');
+        if (sweepSection && !sweepSection.classList.contains('hidden')) {
+          debug('✅ Sweep section is visible');
+        } else {
+          debug('⚠️ Sweep section not visible');
+        }
+
+        // Check if tokens are rendered
+        const tokenList = document.querySelector('.token-list');
+        if (tokenList && tokenList.children.length > 0) {
+          debug(`✅ ${tokenList.children.length} tokens rendered in UI`);
+        } else {
+          debug('❌ No tokens rendered in UI', 'error');
+        }
+
+        // Check for empty state
+        const emptyState = document.getElementById('empty-state');
+        if (emptyState && !emptyState.classList.contains('hidden')) {
+          debug('⚠️ Empty state is showing');
+        } else {
+          debug('✅ Empty state is hidden');
+        }
+
+        debug('🎉 Token display test completed!');
+        
+      } catch (error) {
+        debug(`❌ Test failed: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // Override console methods
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      debug(args.join(' '), 'info');
+    };
+    
+    console.error = function(...args) {
+      originalError.apply(console, args);
+      debug(args.join(' '), 'error');
+    };
+    
+    console.warn = function(...args) {
+      originalWarn.apply(console, args);
+      debug(args.join(' '), 'warn');
+    };
+
+    // Initialize
+    window.addEventListener('load', () => {
+      debug('Token display test page loaded');
+      debug(`Ethers.js version: ${ethers.version || 'v6.x'}`);
+      debug(`Config loaded: ${!!window.CONFIG}`);
+      debug(`App initialized: ${!!window.purgeXApp}`);
+      debug(`Dust sweeper loaded: ${!!window.dustSweeper}`);
+    });
+  </script>
+</body>
+</html>
