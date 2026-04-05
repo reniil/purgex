@@ -795,6 +795,17 @@ async function switchNetwork() {
   }
 }
 
+function startPolling() {
+  // Poll for token updates every 30 seconds
+  if (state.pollInterval) clearInterval(state.pollInterval);
+  state.pollInterval = setInterval(async () => {
+    if (state.account) {
+      await fetchAndUpdateTokens();
+      await loadStakingData();
+    }
+  }, 30000);
+}
+
 function toggleSelectAll(checked) {
   state.tokenData.forEach(token => {
     token.selected = checked;
