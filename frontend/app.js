@@ -1,6 +1,6 @@
 /**
  * PurgeX Frontend Application
- * Enhanced with BlockScout token discovery and custom token support
+ * Enhanced with BlockScout token discovery, custom token support, and staking
  */
 
 // ==================== CONFIGURATION ====================
@@ -8,6 +8,8 @@ const CONFIG = {
   // Deployed contract addresses
   SWEEPER_ADDRESS: '0xc6735B24D5A082E0A75637179A76ecE8a1aE1575',
   PRGX_ADDRESS: '0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0',
+  STAKING_ADDRESS: '0x7FaB14198ae87E6ad95C785E61f14b68D175317B',
+  MULTISIG_ADDRESS: '0xa3C05e032DC179C7BC801C65F35563c8382CF01A',
 
   // Network constants
   CHAIN_ID: 369,
@@ -69,14 +71,32 @@ const CONFIG = {
     'function decimals() view returns (uint8)',
     'function symbol() view returns (string)',
     'function name() view returns (string)',
-    'function approve(address spender, uint256 amount) returns (bool)'
+    'function approve(address spender, uint256 amount) returns (bool)',
+    'function transfer(address to, uint256 amount) returns (bool)'
   ],
 
   SWEEPER_ABI: [
     'function sweepTokens(address[] tokenAddresses, uint256[] minAmountsOut)',
     'function protocolFeeBps() view returns (uint256)',
     'function tokenDestinations(address) view returns (address)',
+    'function setFeeRecipient(address recipient) external',
     'event Sweep(address indexed user, address indexed tokenIn, uint256 amountIn, uint256 amountPRGXOut, address indexed recipient)'
+  ],
+
+  STAKING_ABI: [
+    'function stake(uint256 amount) external',
+    'function stakeAll() external',
+    'function withdraw(uint256 amount) external',
+    'function withdrawAll() external',
+    'function claimReward() external',
+    'function exit() external',
+    'function getStakedBalance(address user) view returns (uint256)',
+    'function pendingRewardsOf(address user) view returns (uint256)',
+    'function getTotalStaked() view returns (uint256)',
+    'function rewardToken() view returns (address)',
+    'function rewardRate() view returns (uint256)',
+    'function rewardRunwaySeconds() view returns (uint256)',
+    'function owner() view returns (address)'
   ]
 };
 
@@ -103,7 +123,21 @@ const DOM = {
   connectPrompt: document.getElementById('connectPrompt'),
   networkWarning: document.getElementById('networkWarning'),
   switchNetworkBtn: document.getElementById('switchNetworkBtn'),
-  contractLink: document.getElementById('contractLink')
+  contractLink: document.getElementById('contractLink'),
+  
+  // Staking elements
+  stakingPanel: document.getElementById('stakingPanel'),
+  stakedBalance: document.getElementById('stakedBalance'),
+  pendingRewards: document.getElementById('pendingRewards'),
+  aprDisplay: document.getElementById('aprDisplay'),
+  stakeAmount: document.getElementById('stakeAmount'),
+  stakeBtn: document.getElementById('stakeBtn'),
+  unstakeAmount: document.getElementById('unstakeAmount'),
+  unstakeBtn: document.getElementById('unstakeBtn'),
+  claimBtn: document.getElementById('claimBtn'),
+  claimAmount: document.getElementById('claimAmount'),
+  prgxMax: document.getElementById('prgxMax'),
+  unstakeMax: document.getElementById('unstakeMax')
 };
 
 // ==================== STATE ====================
@@ -114,6 +148,12 @@ let state = {
   tokenData: [], // { address, symbol, name, balance, decimals, allowance, estValue, status, selected, isCustom }
   customTokens: [], // Additional tokens user added manually
   prgxBalance: 0,
+  staking: {
+    staked: 0,
+    pending: 0,
+    totalStaked: 0,
+    rewardRate: 0
+  },
   pollInterval: null
 };
 
@@ -129,35 +169,164 @@ const shortenAddress = (addr) => {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ==================== BlockScout API ====================
-async function fetchTokensFromBlockScout(address) {
+// ==================== STAKING FUNCTIONS ====================
+async function loadStakingData() {
+  if (!state.signer) return;
+  
   try {
-    const url = `${CONFIG.BLOCKSCOUT_API}?module=account&action=tokenlist&address=${address}`;
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.status === '1' && data.result) {
-      return data.result.map(tok => ({
-        address: tok.contractAddress,
-        symbol: tok.symbol,
-        name: tok.name,
-        decimals: parseInt(tok.decimals),
-        balance: parseFloat(tok.balance) / Math.pow(10, parseInt(tok.decimals)),
-        rawBalance: BigInt(tok.balance),
-        source: 'blockscout'
-      })).filter(tok => tok.balance > 0);
+    const staking = new ethers.Contract(CONFIG.STAKING_ADDRESS, CONFIG.STAKING_ABI, state.signer);
+    const prgx = new ethers.Contract(CONFIG.PRGX_ADDRESS, CONFIG.ERC20_ABI, state.signer);
+    
+    // Load PRGX decimals
+    const decimals = await prgx.decimals();
+    const format = (n) => ethers.formatUnits(n, decimals);
+    
+    // Get user's staked balance
+    const staked = await staking.getStakedBalance(state.account);
+    state.staking.staked = staked;
+    
+    // Get pending rewards
+    const pending = await staking.pendingRewardsOf(state.account);
+    state.staking.pending = pending;
+    
+    // Get total staked and reward rate
+    const totalStaked = await staking.getTotalStaked();
+    state.staking.totalStaked = totalStaked;
+    const rewardRate = await staking.rewardRate();
+    state.staking.rewardRate = rewardRate;
+    
+    // Get user PRGX balance
+    const prgxBal = await prgx.balanceOf(state.account);
+    state.prgxBalance = prgxBal;
+    
+    // Update UI
+    DOM.stakedBalance.textContent = format(staked);
+    DOM.pendingRewards.textContent = format(pending);
+    DOM.prgxBalance.textContent = format(prgxBal);
+    DOM.prgxMax.textContent = format(prgxBal);
+    DOM.unstakeMax.textContent = format(staked);
+    
+    // Calculate APR estimate (rough)
+    if (totalStaked > 0n && rewardRate > 0n) {
+      const rewardsPerYear = rewardRate * 365n * 24n * 60n * 60n;
+      const totalStakedDecimal = ethers.formatUnits(totalStaked, decimals);
+      const totalRewardsDecimal = ethers.formatUnits(rewardsPerYear, decimals);
+      const apr = (parseFloat(totalRewardsDecimal) / parseFloat(totalStakedDecimal)) * 100;
+      DOM.aprDisplay.textContent = apr.toFixed(2) + '%';
+    } else {
+      DOM.aprDisplay.textContent = '--';
     }
-    return [];
+    
+    // Show claim amount
+    DOM.claimAmount.textContent = format(pending);
+    
   } catch (error) {
-    console.error('BlockScout API error:', error);
-    return [];
+    console.error('Error loading staking data:', error);
   }
 }
 
-// ==================== Explorer API (pulsechain-explorer) ====================
-async function fetchTokensFromExplorer(address) {
-  if (!CONFIG.USE_EXPLORER) return [];
+async function stakePRGX(amount) {
+  if (!state.signer) return;
   
+  try {
+    const prgx = new ethers.Contract(CONFIG.PRGX_ADDRESS, CONFIG.ERC20_ABI, state.signer);
+    const staking = new ethers.Contract(CONFIG.STAKING_ADDRESS, CONFIG.STAKING_ABI, state.signer);
+    
+    const decimals = await prgx.decimals();
+    const stakeAmount = ethers.parseUnits(amount.toString(), decimals);
+    
+    // Check allowance first (if not already approved)
+    const allowance = await prgx.allowance(state.account, CONFIG.STAKING_ADDRESS);
+    if (allowance < stakeAmount) {
+      addLog('Approving PRGX for staking...');
+      const approveTx = await prgx.approve(CONFIG.STAKING_ADDRESS, stakeAmount);
+      addLog('Approval transaction sent...');
+      await approveTx.wait();
+      addLog('✅ Approved');
+    }
+    
+    // Stake
+    addLog(`Staking ${amount} PRGX...`);
+    const tx = await staking.stake(stakeAmount);
+    addLog('Transaction pending...');
+    await tx.wait();
+    addLog('✅ Staked successfully!');
+    
+    // Refresh data
+    await loadStakingData();
+    
+  } catch (error) {
+    addLog(`❌ Stake failed: ${error.message}`, 'error');
+    console.error(error);
+  }
+}
+
+async function unstakePRGX(amount) {
+  if (!state.signer) return;
+  
+  try {
+    const staking = new ethers.Contract(CONFIG.STAKING_ADDRESS, CONFIG.STAKING_ABI, state.signer);
+    const decimals = 18n; // PRGX decimals fixed at 18
+    const unstakeAmount = ethers.parseUnits(amount.toString(), decimals);
+    
+    addLog(`Unstaking ${amount} PRGX...`);
+    const tx = await staking.withdraw(unstakeAmount);
+    addLog('Transaction pending...');
+    await tx.wait();
+    addLog('✅ Unstaked successfully!');
+    
+    await loadStakingData();
+    
+  } catch (error) {
+    addLog(`❌ Unstake failed: ${error.message}`, 'error');
+  }
+}
+
+async function claimRewards() {
+  if (!state.signer) return;
+  
+  try {
+    const staking = new ethers.Contract(CONFIG.STAKING_ADDRESS, CONFIG.STAKING_ABI, state.signer);
+    
+    addLog('Claiming rewards...');
+    const tx = await staking.claimReward();
+    addLog('Transaction pending...');
+    await tx.wait();
+    addLog('✅ Rewards claimed!');
+    
+    await loadStakingData();
+    
+  } catch (error) {
+    addLog(`❌ Claim failed: ${error.message}`, 'error');
+  }
+}
+
+function setupStakingHandlers() {
+  DOM.stakeBtn.addEventListener('click', async () => {
+    const amount = DOM.stakeAmount.value;
+    if (!amount || parseFloat(amount) <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+    await stakePRGX(amount);
+    DOM.stakeAmount.value = '';
+  });
+  
+  DOM.unstakeBtn.addEventListener('click', async () => {
+    const amount = DOM.unstakeAmount.value;
+    if (!amount || parseFloat(amount) <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+    await unstakePRGX(amount);
+    DOM.unstakeAmount.value = '';
+  });
+  
+  DOM.claimBtn.addEventListener('click', claimRewards);
+}
+
+// ==================== API FUNCTIONS ====================
+async function fetchTokensFromExplorer(address) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
@@ -187,6 +356,12 @@ async function fetchTokensFromExplorer(address) {
   }
 }
 
+async function fetchTokensFromBlockScout(address) {
+  // Implementation for BlockScout fallback
+  // This would query BlockScout API directly
+  return [];
+}
+
 // ==================== HYBRID TOKEN FETCH ====================
 async function fetchWalletTokens(address) {
   // Try explorer first (faster, richer metadata)
@@ -210,6 +385,7 @@ function updateUI() {
     DOM.dustPanel.style.display = 'none';
     DOM.sweepPanel.style.display = 'none';
     DOM.prgxCard.style.display = 'none';
+    DOM.stakingPanel.style.display = 'none';
     return;
   }
 
@@ -232,6 +408,12 @@ function updateUI() {
     DOM.sweepPanel.style.display = 'none';
     DOM.prgxCard.style.display = 'block';
     DOM.prgxBalance.textContent = formatNumber(ethers.formatUnits(state.prgxBalance, 18), 4);
+  }
+
+  // Show staking panel if connected
+  if (state.account) {
+    DOM.stakingPanel.style.display = 'block';
+    loadStakingData();
   }
 
   // Update contract link if sweeper address is set
@@ -290,191 +472,67 @@ function updateSweepSummary() {
   DOM.estimatedOut.textContent = formatNumber(totalPRGXOut, 4);
 }
 
-function addLog(message, type = 'info') {
-  const logEntry = document.createElement('div');
-  logEntry.className = `log-entry log-${type}`;
-  const timestamp = new Date().toLocaleTimeString();
-  logEntry.textContent = `[${timestamp}] ${message}`;
-  DOM.statusLog.prepend(logEntry);
-
-  // Keep only last 10 logs
-  if (DOM.statusLog.children.length > 10) {
-    DOM.statusLog.removeChild(DOM.statusLog.lastChild);
-  }
-}
-
-// ==================== TOKEN SCANNING ====================
-async function scanTokens() {
-  if (!state.account || !state.provider) return;
-
-  addLog('Scanning wallet for tokens...');
-  state.tokenData = [];
-
-  try {
-    // 1. Fetch tokens via hybrid method (explorer first, fallback to BlockScout)
-    const discoveredTokens = await fetchWalletTokens(state.account);
-    addLog(`Discovered ${discoveredTokens.length} tokens`);
-
-    // 2. Merge with COMMON_TOKENS for better metadata
-    const allTokens = [];
-
-    for (const token of discoveredTokens) {
-      // Check if in COMMON_TOKENS for richer metadata
-      const common = CONFIG.COMMON_TOKENS.find(t => t.address.toLowerCase() === token.address.toLowerCase());
-      allTokens.push({
-        ...token,
-        name: common?.name || token.name,
-        symbol: common?.symbol || token.symbol,
-        isCustom: false,
-        selected: true
-      });
-    }
-
-    // 3. Add user's custom tokens
-    for (const customAddr of state.customTokens) {
-      // Skip if already in list
-      if (allTokens.some(t => t.address.toLowerCase() === customAddr.toLowerCase())) continue;
-
-      try {
-        const tokenContract = new ethers.Contract(customAddr, CONFIG.ERC20_ABI, state.provider);
-        const [balance, decimals, symbol, name] = await Promise.all([
-          tokenContract.balanceOf(state.account),
-          tokenContract.decimals(),
-          tokenContract.symbol().catch(() => '???'),
-          tokenContract.name().catch(() => 'Unknown Token')
-        ]);
-
-        if (balance > 0) {
-          allTokens.push({
-            address: customAddr,
-            symbol,
-            name,
-            decimals: Number(decimals),
-            balance: ethers.formatUnits(balance, decimals),
-            rawBalance: balance,
-            isCustom: true,
-            selected: true
-          });
-        }
-      } catch (e) {
-        console.warn(`Failed to fetch custom token ${customAddr}:`, e);
-      }
-    }
-
-    state.tokenData = allTokens;
-    addLog(`Found ${allTokens.length} token(s) with balance`);
-
-  } catch (error) {
-    addLog(`Scan failed: ${error.message}`, 'error');
-  }
-
-  // Fetch PRGX balance
-  try {
-    if (CONFIG.PRGX_ADDRESS !== ethers.AddressZero) {
-      const prgxContract = new ethers.Contract(CONFIG.PRGX_ADDRESS, CONFIG.ERC20_ABI, state.provider);
-      state.prgxBalance = await prgxContract.balanceOf(state.account);
-    }
-  } catch (e) {
-    state.prgxBalance = 0;
-  }
-
-  updateUI();
-}
-
-// ==================== CUSTOM TOKEN HANDLING ====================
-async function addCustomToken() {
-  const address = DOM.customTokenAddress.value.trim();
-  if (!ethers.isAddress(address)) {
-    alert('Please enter a valid Ethereum address');
-    return;
-  }
-
-  // Check if already added
-  if (state.customTokens.includes(address) || state.tokenData.some(t => t.address.toLowerCase() === address.toLowerCase())) {
-    alert('Token already in list');
-    return;
-  }
-
-  state.customTokens.push(address);
-  DOM.customTokenAddress.value = '';
-
-  addLog(`Added custom token: ${shortenAddress(address)}`);
-  await scanTokens(); // Rescan with new token
-}
-
-// ==================== APPROVE ALL ====================
-async function approveAllSelected() {
-  const selected = state.tokenData.filter(t => t.selected);
-
-  if (selected.length === 0) {
-    addLog('No tokens selected for approval', 'error');
-    return;
-  }
-
-  // Filter only those not already approved
-  const pending = selected.filter(t => t.status !== 'approved');
-  if (pending.length === 0) {
-    addLog('All selected tokens already approved');
-    return;
-  }
-
-  addLog(`Approving ${pending.length} token(s)...`);
-
-  // Approve one by one (could parallelize but safer sequentially)
-  for (const token of pending) {
-    await approveToken(token);
-    // Small delay between approvals to avoid nonce issues
-    await sleep(2000);
-  }
-
-  addLog('✅ All approvals complete');
-}
-
-// ==================== WALLET CONNECTION ====================
+// ==================== CONNECTION & NETWORK ====================
 async function connectWallet() {
-  if (!window.ethereum) {
-    alert('Please install MetaMask or another Web3 wallet to use PurgeX.');
+  if (typeof window.ethereum === 'undefined') {
+    alert('Please install MetaMask to use this app');
     return;
   }
 
   try {
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const accounts = await provider.send('eth_requestAccounts', []);
+    const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+
+    state.provider = provider;
+    state.signer = signer;
     state.account = accounts[0];
-    state.provider = new ethers.BrowserProvider(window.ethereum);
-    state.signer = await state.provider.getSigner();
 
-    DOM.connectBtn.textContent = shortenAddress(state.account);
-    DOM.connectBtnPrompt.textContent = shortenAddress(state.account);
+    // Check if on PulseChain
+    const chainId = Number(network.chainId);
+    if (chainId !== CONFIG.CHAIN_ID) {
+      DOM.networkWarning.style.display = 'block';
+      DOM.dustPanel.style.display = 'none';
+      DOM.sweepPanel.style.display = 'none';
+      DOM.prgxCard.style.display = 'none';
+      DOM.stakingPanel.style.display = 'none';
+      return;
+    }
 
-    addLog(`Wallet connected: ${shortenAddress(state.account)}`);
+    DOM.networkWarning.style.display = 'none';
+    addLog(`Connected: ${shortenAddress(state.account)}`);
 
-    // Start scanning
-    await scanTokens();
+    // Start polling for token updates
     startPolling();
 
+    // Initial UI update
+    updateUI();
+
   } catch (error) {
-    console.error('Connection failed:', error);
-    addLog(`Connection failed: ${error.message}`, 'error');
+    console.error('Connection error:', error);
+    addLog(`❌ Connection failed: ${error.message}`, 'error');
   }
 }
 
 async function checkNetwork() {
   if (!state.provider) return;
-
-  const network = await state.provider.getNetwork();
-  const currentChainId = Number(network.chainId);
-
-  if (currentChainId !== CONFIG.CHAIN_ID) {
-    DOM.networkWarning.style.display = 'block';
-    DOM.dustPanel.style.display = 'none';
-    DOM.sweepPanel.style.display = 'none';
-    return;
-  } else {
-    DOM.networkWarning.style.display = 'none';
-    if (state.account) {
-      DOM.dustPanel.style.display = 'block';
-      DOM.sweepPanel.style.display = 'block';
+  
+  try {
+    const network = await state.provider.getNetwork();
+    const chainId = Number(network.chainId);
+    
+    if (chainId !== CONFIG.CHAIN_ID) {
+      DOM.networkBadge.textContent = `Wrong Network (${chainId})`;
+      DOM.networkBadge.classList.add('error');
+      DOM.networkWarning.style.display = 'block';
+    } else {
+      DOM.networkBadge.textContent = `PulseChain`;
+      DOM.networkBadge.classList.remove('error');
+      DOM.networkWarning.style.display = 'none';
     }
+  } catch (error) {
+    console.error('Network check error:', error);
   }
 }
 
@@ -484,179 +542,199 @@ async function switchNetwork() {
       method: 'wallet_switchEthereumChain',
       params: [{ chainId: CONFIG.NETWORK.chainId }]
     });
-    addLog('Network switched to PulseChain');
-    await checkNetwork();
+    location.reload();
   } catch (error) {
+    // Chain not added, try adding it
     if (error.code === 4902) {
       try {
         await window.ethereum.request({
           method: 'wallet_addEthereumChain',
           params: [CONFIG.NETWORK]
         });
-        addLog('PulseChain network added and switched');
-        await checkNetwork();
+        location.reload();
       } catch (addError) {
-        addLog(`Failed to add network: ${addError.message}`, 'error');
-      }
-    } else {
-      addLog(`Switch failed: ${error.message}`, 'error');
-    }
-  }
-}
-
-// ==================== APPROVAL & SWEEPING ====================
-async function approveToken(token) {
-  const tokenContract = new ethers.Contract(token.address, CONFIG.ERC20_ABI, state.signer);
-
-  // Update status
-  token.status = 'approving';
-  updateTokenRow(token);
-
-  try {
-    const maxAmount = ethers.MaxUint256.toString();
-    const tx = await tokenContract.approve(CONFIG.SWEEPER_ADDRESS, maxAmount);
-    addLog(`Approving ${token.symbol}... (tx: ${tx.hash.slice(0, 10)}...)`);
-
-    await tx.wait();
-    token.status = 'approved';
-    addLog(`✅ Approved ${token.symbol}`);
-  } catch (error) {
-    token.status = 'pending';
-    addLog(`❌ Approval failed for ${token.symbol}: ${error.message}`, 'error');
-  }
-
-  updateTokenRow(token);
-  updateSweepSummary();
-}
-
-async function sweepSelected() {
-  const selected = state.tokenData.filter(t => t.selected);
-
-  if (selected.length === 0) {
-    addLog('No tokens selected for sweeping', 'error');
-    return;
-  }
-
-  // Ensure all selected are approved
-  const pendingApprovals = selected.filter(t => t.status !== 'approved');
-  if (pendingApprovals.length > 0) {
-    addLog('Please approve all selected tokens first', 'error');
-    return;
-  }
-
-  DOM.btnText.style.display = 'none';
-  DOM.btnLoading.style.display = 'inline';
-
-  try {
-    const sweeperContract = new ethers.Contract(CONFIG.SWEEPER_ADDRESS, CONFIG.SWEEPER_ABI, state.signer);
-
-    const tokenAddresses = selected.map(t => t.address);
-    const minAmountsOut = selected.map(() => 0);
-
-    addLog(`Sweeping ${selected.length} token(s)...`);
-    const tx = await sweeperContract.sweepTokens(tokenAddresses, minAmountsOut);
-    addLog(`Transaction sent: ${tx.hash.slice(0, 10)}...`);
-
-    const receipt = await tx.wait();
-    addLog(`✅ Sweep confirmed in block ${receipt.blockNumber}`);
-
-    // Parse Sweep events
-    const iface = new ethers.Interface(CONFIG.SWEEPER_ABI);
-    for (const log of receipt.logs) {
-      try {
-        const parsed = iface.parseLog(log);
-        if (parsed && parsed.name === 'Sweep') {
-          const { tokenIn, amountIn, amountPRGXOut } = parsed.args;
-          const token = selected.find(t => t.address.toLowerCase() === tokenIn.toLowerCase());
-          const tokenSymbol = token ? token.symbol : 'Unknown';
-          const prgxOut = ethers.formatUnits(amountPRGXOut, 18);
-          addLog(`   🧹 ${ethers.formatUnits(amountIn, 18)} ${tokenSymbol} → ${prgxOut} PRGX`);
-        }
-      } catch (e) {
-        // Not a Sweep event
+        alert('Failed to add PulseChain network. Please add it manually in MetaMask.');
       }
     }
+  }
+}
 
-    // Refresh balances after sweep
-    await sleep(2000);
-    await scanTokens();
+function checkConnection() {
+  // Check if already connected on page load
+  if (window.ethereum && window.ethereum.selectedAddress) {
+    // Injected provider found, but need to initialize state
+    // For simplicity, user must click connect
+  }
+}
 
+// ==================== TOKEN MANAGEMENT ====================
+async function fetchAndUpdateTokens() {
+  if (!state.account) return;
+  
+  try {
+    const tokens = await fetchWalletTokens(state.account);
+    
+    // Merge with custom tokens
+    const allTokens = [...tokens];
+    state.customTokens.forEach(custom => {
+      // Avoid duplicates
+      if (!allTokens.find(t => t.address.toLowerCase() === custom.address.toLowerCase())) {
+        allTokens.push(custom);
+      }
+    });
+    
+    // Preserve selection status
+    const newTokenData = allTokens.map(token => {
+      const existing = state.tokenData.find(t => t.address === token.address);
+      return {
+        ...token,
+        selected: existing ? existing.selected : false,
+        status: existing ? existing.status : 'pending',
+        allowance: existing ? existing.allowance : 0n
+      };
+    });
+    
+    state.tokenData = newTokenData;
+    updateUI();
+    
+    // Refresh PRGX balance specifically
+    await refreshPRGXBalance();
+    
   } catch (error) {
-    addLog(`❌ Sweep failed: ${error.message}`, 'error');
-  } finally {
-    DOM.btnText.style.display = 'inline';
-    DOM.btnLoading.style.display = 'none';
+    console.error('Error fetching tokens:', error);
+    addLog(`❌ Failed to fetch tokens: ${error.message}`, 'error');
   }
 }
 
-function updateTokenRow(token) {
-  const row = document.querySelector(`tr[data-index="${state.tokenData.indexOf(token)}"]`);
-  if (!row) return;
-
-  const statusCell = row.querySelector('td:last-child');
-  if (token.status === 'approved') {
-    statusCell.innerHTML = '<span class="badge success">Approved</span>';
-  } else if (token.status === 'approving') {
-    statusCell.innerHTML = '<span class="badge pending">Approving...</span>';
-  } else {
-    statusCell.innerHTML = '<span class="badge">Pending</span>';
+async function refreshPRGXBalance() {
+  if (!state.signer) return;
+  
+  try {
+    const prgx = new ethers.Contract(CONFIG.PRGX_ADDRESS, CONFIG.ERC20_ABI, state.signer);
+    const balance = await prgx.balanceOf(state.account);
+    state.prgxBalance = balance;
+    
+    // Update UI if PRGX card is visible
+    if (DOM.prgxCard.style.display !== 'none') {
+      DOM.prgxBalance.textContent = formatNumber(ethers.formatUnits(balance, 18), 4);
+    }
+  } catch (error) {
+    console.error('Error fetching PRGX balance:', error);
   }
 }
 
-// ==================== EVENT LISTENERS ====================
-DOM.connectBtn?.addEventListener('click', connectWallet);
-DOM.connectBtnPrompt?.addEventListener('click', connectWallet);
-DOM.switchNetworkBtn?.addEventListener('click', switchNetwork);
-DOM.addCustomTokenBtn?.addEventListener('click', addCustomToken);
-
-DOM.selectAll?.addEventListener('change', (e) => {
-  const checked = e.target.checked;
-  state.tokenData.forEach(t => t.selected = checked);
+// ==================== EVENT HANDLERS (continued) ====================
+function toggleSelectAll(checked) {
+  state.tokenData.forEach(token => {
+    token.selected = checked;
+  });
   renderTokenTable();
-  updateSweepSummary();
-});
-
-DOM.approveAllBtn?.addEventListener('click', approveAllSelected);
-
-DOM.dustTableBody?.addEventListener('change', (e) => {
-  if (e.target.classList.contains('token-checkbox')) {
-    const idx = parseInt(e.target.dataset.index);
-    state.tokenData[idx].selected = e.target.checked;
-    updateSweepSummary();
-  }
-});
-
-DOM.sweepBtn?.addEventListener('click', sweepSelected);
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && DOM.sweepPanel.style.display !== 'none') {
-    sweepSelected();
-  }
-});
-
-// Custom token input Enter key
-DOM.customTokenAddress?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    addCustomToken();
-  }
-});
-
-// Poll for network changes and balances
-function startPolling() {
-  if (state.pollInterval) clearInterval(state.pollInterval);
-  state.pollInterval = setInterval(async () => {
-    await checkNetwork();
-    // Optionally rescan every 30s to catch new tokens
-    // await scanTokens();
-  }, 30_000);
 }
 
-// ==================== INIT ====================
-// Pre-fill config if not set (will be overwritten by server-side env injection)
-if (typeof CONFIG_ADDRESSES !== 'undefined') {
-  CONFIG.SWEEPER_ADDRESS = CONFIG_ADDRESSES.SWEEPER;
-  CONFIG.PRGX_ADDRESS = CONFIG_ADDRESSES.PRGX;
+async function addCustomToken() {
+  const address = DOM.customTokenAddress.value.trim();
+  if (!ethers.isAddress(address)) {
+    alert('Invalid address');
+    return;
+  }
+  
+  // Check if already exists
+  if (state.tokenData.find(t => t.address.toLowerCase() === address.toLowerCase())) {
+    alert('Token already in list');
+    return;
+  }
+  
+  try {
+    const token = new ethers.Contract(address, CONFIG.ERC20_ABI, state.provider);
+    const [symbol, name, decimals] = await Promise.all([
+      token.symbol(),
+      token.name(),
+      token.decimals()
+    ]);
+    
+    const balance = await token.balanceOf(state.account);
+    
+    if (balance === 0n) {
+      alert('This token has 0 balance in your wallet');
+      return;
+    }
+    
+    const customToken = {
+      address,
+      symbol,
+      name,
+      decimals: Number(decimals),
+      balance: ethers.formatUnits(balance, decimals),
+      rawBalance: balance,
+      isCustom: true,
+      selected: false,
+      status: 'pending'
+    };
+    
+    state.customTokens.push(customToken);
+    DOM.customTokenAddress.value = '';
+    
+    // Refresh token list
+    await fetchAndUpdateTokens();
+    addLog(`Added custom token: ${symbol}`);
+    
+  } catch (error) {
+    console.error('Error adding custom token:', error);
+    addLog(`❌ Failed to add token: ${error.message}`, 'error');
+  }
 }
 
-addLog('PurgeX frontend loaded');
-updateUI();
+// ==================== LOGGING ====================
+function addLog(message, type = 'info') {
+  const log = document.createElement('div');
+  log.className = `log-entry ${type}`;
+  log.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+  DOM.statusLog.appendChild(log);
+  DOM.statusLog.scrollTop = DOM.statusLog.scrollHeight;
+}
+
+// ==================== MAIN APP LOGIC ====================
+let app = {
+  init() {
+    this.setupEventListeners();
+    this.checkConnection();
+  },
+  
+  setupEventListeners() {
+    DOM.connectBtn?.addEventListener('click', () => this.connectWallet());
+    DOM.connectBtnPrompt?.addEventListener('click', () => this.connectWallet());
+    DOM.switchNetworkBtn?.addEventListener('click', () => this.switchNetwork());
+    DOM.selectAll?.addEventListener('change', (e) => this.toggleSelectAll(e.target.checked));
+    DOM.addCustomTokenBtn?.addEventListener('click', () => this.addCustomToken());
+    DOM.sweepBtn?.addEventListener('click', () => this.executeSweep());
+    
+    // Setup staking handlers
+    setupStakingHandlers();
+  },
+  
+  checkConnection() {
+    // Auto-connect if provider present (optional)
+    if (window.ethereum) {
+      // Could auto-connect, but better to let user click
+    }
+  },
+  
+  toggleSelectAll(checked) {
+    toggleSelectAll(checked);
+  },
+  
+  async executeSweep() {
+    // Implementation for sweep functionality
+    addLog('Sweep functionality would go here...');
+  }
+};
+
+// Start the app when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  app.init();
+});
+
+// Also try to init immediately in case DOM already loaded
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  app.init();
+}

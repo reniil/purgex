@@ -115,6 +115,70 @@
       <div class="status-log" id="statusLog"></div>
     </section>
 
+    <!-- Staking Panel -->
+    <section class="card staking-panel" id="stakingPanel" style="display: none;">
+      <div class="panel-header">
+        <h2>PRGX Staking</h2>
+        <div class="panel-actions">
+          <a href="https://scan.pulsechain.com/address/0x7FaB14198ae87E6ad95C785E61f14b68D175317B" target="_blank" class="link-explorer">View on PulseScan</a>
+        </div>
+      </div>
+
+      <div class="staking-stats">
+        <div class="stat">
+          <div class="stat-label">Your Staked</div>
+          <div class="stat-value" id="stakedBalance">0.00</div>
+          <div class="stat-unit">PRGX</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pending Rewards</div>
+          <div class="stat-value" id="pendingRewards">0.00</div>
+          <div class="stat-unit">PRGX</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">APR (est.)</div>
+          <div class="stat-value highlight" id="aprDisplay">--</div>
+          <div class="stat-unit"></div>
+        </div>
+      </div>
+
+      <div class="staking-actions">
+        <div class="action-group">
+          <label>Stake PRGX</label>
+          <div class="input-group">
+            <input type="number" id="stakeAmount" placeholder="0.00" min="0" step="any">
+            <button class="btn-stake" id="stakeBtn">Stake</button>
+          </div>
+          <div class="action-hint">Max: <span id="prgxMax">0.00</span> PRGX</div>
+        </div>
+
+        <div class="action-group">
+          <label>Unstake PRGX</label>
+          <div class="input-group">
+            <input type="number" id="unstakeAmount" placeholder="0.00" min="0" step="any">
+            <button class="btn-unstake" id="unstakeBtn">Unstake</button>
+          </div>
+          <div class="action-hint">Staked: <span id="unstakeMax">0.00</span> PRGX</div>
+        </div>
+
+        <div class="action-group">
+          <label>Claim Rewards</label>
+          <button class="btn-claim" id="claimBtn">Claim All</button>
+          <div class="claim-preview">Rewards ready: <span id="claimAmount">0.00</span> PRGX</div>
+        </div>
+      </div>
+
+      <div class="staking-info">
+        <h4>Staking Info</h4>
+        <ul>
+          <li>Reward rate: <code>6.4 PRGX/second</code> (distributed to stakers proportional to share)</li>
+          <li>Rewards update every block. Claim anytime.</li>
+          <li>No lock-up period — unstake anytime.</li>
+          <li>Contract: <a href="https://scan.pulsechain.com/address/0x7FaB14198ae87E6ad95C785E61f14b68D175317B" target="_blank">0x7FaB...317B</a></li>
+        </ul>
+      </div>
+    </section>
+
     <!-- Connect prompt (when not connected) -->
     <section class="card connect-prompt" id="connectPrompt">
       <div class="prompt-content">
