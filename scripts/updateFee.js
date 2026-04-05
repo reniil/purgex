@@ -4,7 +4,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
+let PRIVATE_KEY = process.env.PRIVATE_KEY;
+// Ensure 0x prefix for private key
+if (PRIVATE_KEY && !PRIVATE_KEY.startsWith('0x')) {
+  PRIVATE_KEY = '0x' + PRIVATE_KEY;
+}
 const RPC_URL = process.env.PULSECHAIN_RPC || 'https://rpc.pulsechain.com';
 const SWEEPER_ADDRESS = '0xc6735B24D5A082E0A75637179A76ecE8a1aE1575';
 const NEW_FEE_BPS = 500; // 5%
@@ -28,7 +32,7 @@ async function main() {
     'function owner() view returns (address)',
     'function protocolFeeBps() view returns (uint256)',
     'function setProtocolFee(uint256 bps) external'
-  ], provider);
+  ], wallet);
 
   const currentOwner = await sweeper.owner();
   console.log('Current owner:', currentOwner);
@@ -40,8 +44,8 @@ async function main() {
     process.exit(1);
   }
 
-  const currentFee = await sweeper.protocolFeeBPS();
-  console.log('Current fee:', currentFee.toNumber(), 'BPS (', (currentFee.toNumber() / 100).toFixed(2), '% )');
+  const currentFee = await sweeper.protocolFeeBps();
+  console.log('Current fee:', currentFee.toString(), 'BPS (', (Number(currentFee) / 100).toFixed(2), '% )');
 
   // Execute fee update
   console.log('\n📝 Updating fee...');
@@ -53,8 +57,8 @@ async function main() {
   console.log('✅ Transaction confirmed in block:', receipt.blockNumber);
 
   // Verify
-  const newFee = await sweeper.protocolFeeBPS();
-  console.log('✅ New fee set:', newFee.toNumber(), 'BPS (', (newFee.toNumber() / 100).toFixed(2), '% )');
+  const newFee = await sweeper.protocolFeeBps();
+  console.log('✅ New fee set:', newFee.toString(), 'BPS (', (Number(newFee) / 100).toFixed(2), '% )');
 
   console.log('\n🎉 Fee update complete!');
 }

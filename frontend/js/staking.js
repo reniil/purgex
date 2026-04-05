@@ -40,10 +40,10 @@ class StakingManager {
       
       // Fetch all data in parallel with error handling
       const results = await Promise.allSettled([
-        stakingContract.stakedBalance(userAddress),
-        stakingContract.pendingRewards(userAddress),
-        stakingContract.totalStaked(),
-        stakingContract.rewardRate(),
+        stakingContract.getStakedBalance(userAddress),
+        stakingContract.pendingRewardsOf(userAddress),
+        stakingContract.getTotalStaked(),
+        stakingContract.getRewardRate(),
         prgxContract.balanceOf(userAddress),
         window.priceOracle?.fetchPRGXPrice() || Promise.resolve(0)
       ]);
@@ -56,6 +56,23 @@ class StakingManager {
       const walletBalance = results[4].status === 'fulfilled' ? results[4].value : 0n;
       const prgxPrice = results[5].status === 'fulfilled' ? results[5].value : 0;
       
+      // Debug log the results
+      console.log('🔍 Dashboard raw results:', {
+        stakedBalance: stakedBalance.toString(),
+        pendingRewards: pendingRewards.toString(),
+        totalStaked: totalStaked.toString(),
+        rewardRate: rewardRate.toString(),
+        walletBalance: walletBalance.toString(),
+        prgxPrice: prgxPrice
+      });
+      
+      // Check if any calls failed
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.warn(`⚠️ Contract call ${index} failed:`, result.reason);
+        }
+      });
+      
       // Format data
       this.dashboardData = {
         stakedBalance: Number(ethers.formatEther(stakedBalance)),
@@ -65,6 +82,8 @@ class StakingManager {
         walletBalance: Number(ethers.formatEther(walletBalance)),
         prgxPrice: prgxPrice
       };
+      
+      console.log('📊 Formatted dashboard data:', this.dashboardData);
       
       // Calculate APR
       const apr = this.calculateAPR(this.dashboardData.rewardRate, this.dashboardData.totalStaked);
@@ -255,7 +274,7 @@ class StakingManager {
       );
       
       const amountWei = ethers.parseEther(amountPRGX);
-      const tx = await stakingContract.unstake(amountWei);
+      const tx = await stakingContract.withdraw(amountWei);
       
       this.updateStatusLog(`⏳ Unstake TX: ${tx.hash}`, 'pending');
       
@@ -292,8 +311,12 @@ class StakingManager {
       throw new Error('Dashboard data not loaded');
     }
     
+    if (this.dashboardData.pendingRewards <= 0) {
+      throw new Error('No rewards to claim');
+    }
+    
     try {
-      this.updateStatusLog('🚀 Executing claim transaction...', 'pending');
+      this.updateStatusLog('� Claiming rewards...', 'pending');
       
       const stakingContract = new ethers.Contract(
         CONFIG.CONTRACTS.STAKING,
@@ -301,7 +324,7 @@ class StakingManager {
         window.wallet.signer
       );
       
-      const tx = await stakingContract.claimRewards();
+      const tx = await stakingContract.claimReward();
       
       this.updateStatusLog(`⏳ Claim TX: ${tx.hash}`, 'pending');
       
@@ -311,7 +334,7 @@ class StakingManager {
       const claimedEvent = receipt.logs?.find(log => {
         try {
           const parsed = stakingContract.interface.parseLog(log);
-          return parsed.name === 'RewardsClaimed';
+          return parsed.name === 'RewardPaid';
         } catch {
           return false;
         }
@@ -416,7 +439,12 @@ class StakingManager {
   // UI UPDATES
   // ================================================================
   updateDashboardUI() {
-    if (!this.dashboardData) return;
+    if (!this.dashboardData) {
+      console.log('❌ No dashboard data to update UI');
+      return;
+    }
+    
+    console.log('🎨 Updating dashboard UI with data:', this.dashboardData);
     
     // Update stat cards
     this.updateElement('stakedBalance', this.dashboardData.stakedBalance.toFixed(2));
@@ -432,12 +460,17 @@ class StakingManager {
     
     // Update claim button
     this.updateClaimButton(this.dashboardData.pendingRewards);
+    
+    console.log('✅ Dashboard UI updated');
   }
 
   updateElement(id, value) {
     const element = document.getElementById(id);
     if (element) {
       element.textContent = value;
+      console.log(`✅ Updated ${id}: ${value}`);
+    } else {
+      console.warn(`❌ Element not found: ${id}`);
     }
   }
 

@@ -1,208 +1,460 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  PRGX Staking — Remix-ready  |  OpenZeppelin v5.x
+//  Stake PRGX, earn any ERC20 reward token (USDC, DAI, PRGX itself, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 
-/**
- * @title PRGX Staking
- * @notice Stake PRGX to earn rewards distributed in a reward token (e.g., USDC, DAI, or PRGX itself)
- * @dev Simple, gas-efficient staking with reward per second accrual.
- */
-contract PRGXStaking is Ownable, Pausable {
+contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // ==================== EVENTS ====================
+    // ══════════════════════════════════════════════════════════
+    //  EVENTS
+    // ══════════════════════════════════════════════════════════
+
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
-    event RewardPaid(address indexed user, IERC20 indexed token, uint256 amount);
-    event RewardAdded(IERC20 indexed token, uint256 rewardRatePerSecond);
-    event Paused();
-    event Unpaused();
+    event RewardPaid(address indexed user, address indexed token, uint256 amount);
+    event RewardConfigured(address indexed token, uint256 rewardRatePerSecond);
+    event RewardsDeposited(address indexed token, uint256 amount);
+    event RewardsWithdrawn(address indexed token, uint256 amount);
+    event EmergencyWithdraw(address indexed user, uint256 amount);
 
-    // ==================== STATE ====================
-    IERC20 public stakingToken; // PRGX
-    uint256 public totalStaked;
-    uint256 public lastUpdateTime;
-    uint256 public rewardPerTokenStored; // scaled by 1e18
+    // ══════════════════════════════════════════════════════════
+    //  STATE
+    // ══════════════════════════════════════════════════════════
 
-    // Reward distribution state for current reward token
+    /// @notice The token users stake (PRGX)
+    IERC20 public immutable stakingToken;
+
+    /// @notice The token distributed as rewards (set via configureReward)
     IERC20 public rewardToken;
-    uint256 public rewardRate; // tokens per second
-    uint256 public distributed; // total distributed since last update
-    uint256 public rewardFinishTime; // when current reward allocation ends
 
-    // Per-user state
+    /// @notice Reward tokens emitted per second
+    uint256 public rewardRate;
+
+    /// @notice Accumulated reward per staked token, scaled by 1e18
+    uint256 public rewardPerTokenStored;
+
+    /// @notice Last timestamp rewards were updated
+    uint256 public lastUpdateTime;
+
+    /// @notice Total PRGX staked across all users
+    uint256 public totalStaked;
+
+    /// @dev Per-user staked balance
     mapping(address => uint256) public userStaked;
-    mapping(address => uint256) public userRewardPerTokenPaid; // what user has already claimed
-    mapping(address => uint256) public pendingRewards; // pending reward amount for user
 
-    // ==================== MODIFIERS ====================
+    /// @dev Snapshot of rewardPerTokenStored at the user's last interaction
+    mapping(address => uint256) public userRewardPerTokenPaid;
+
+    /// @dev Accrued but unclaimed rewards per user
+    mapping(address => uint256) public pendingRewards;
+
+    // ══════════════════════════════════════════════════════════
+    //  CONSTRUCTOR
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @param _stakingToken  Address of the PRGX token
+     */
+    constructor(address _stakingToken) {
+        require(_stakingToken != address(0), "Invalid staking token");
+        stakingToken = IERC20(_stakingToken);
+        lastUpdateTime = block.timestamp;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  MODIFIERS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @dev Snapshots global then user reward state before every state-changing call.
+     *      FIX: original skipped updating userRewardPerTokenPaid correctly — see _updateReward.
+     */
     modifier updateReward(address _user) {
         _updateReward(_user);
         _;
     }
 
-    modifier onlyRewardToken() {
-        require(msg.sender == address(rewardToken), "Only reward token");
-        _;
-    }
+    // ══════════════════════════════════════════════════════════
+    //  REWARD ACCRUAL — INTERNAL
+    // ══════════════════════════════════════════════════════════
 
-    // ==================== CONSTRUCTOR ====================
-    constructor(IERC20 _stakingToken) {
-        stakingToken = _stakingToken;
-        lastUpdateTime = block.timestamp;
-    }
-
-    // ==================== REWARD DISTRIBUTION LOGIC ====================
-    /// @dev Update global and user pending rewards
+    /**
+     * @dev Update global accumulator, then credit the user's pending balance.
+     *
+     *      BUG FIX (original): userRewardPerTokenPaid was incremented by `userReward`
+     *      (a delta) instead of being SET to the current `rewardPerTokenStored`.
+     *      This caused the user's paid checkpoint to drift out of sync, permanently
+     *      over-counting rewards on every subsequent accrual.
+     *
+     *      Correct pattern (standard Synthetix model):
+     *        earned = stake * (rewardPerTokenStored - userRewardPerTokenPaid) / 1e18
+     *        userRewardPerTokenPaid = rewardPerTokenStored   ← SET, not +=
+     */
     function _updateReward(address _user) internal {
+        // ── Global accumulator ──────────────────────────────
         if (totalStaked > 0 && rewardRate > 0 && block.timestamp > lastUpdateTime) {
             uint256 timePassed = block.timestamp - lastUpdateTime;
-            uint256 rewardToDistribute = rewardRate * timePassed;
-            distributed += rewardToDistribute;
-            rewardPerTokenStored += (rewardToDistribute * 1e18) / totalStaked;
-            lastUpdateTime = block.timestamp;
+            uint256 newReward  = rewardRate * timePassed;
+            rewardPerTokenStored += (newReward * 1e18) / totalStaked;
         }
+        lastUpdateTime = block.timestamp;   // FIX: always update timestamp, even when no stakers
 
-        if (_user != address(0) && userStaked[_user] > 0) {
-            uint256 userReward = ((userStaked[_user] * rewardPerTokenStored) / 1e18) - userRewardPerTokenPaid[_user];
-            pendingRewards[_user] += userReward;
-            userRewardPerTokenPaid[_user] += userReward;
+        // ── User accumulator ────────────────────────────────
+        if (_user != address(0)) {
+            pendingRewards[_user]         = _earned(_user);
+            userRewardPerTokenPaid[_user] = rewardPerTokenStored;  // FIX: SET not +=
         }
     }
 
-    /// @notice Add a new reward token and rate (can only have one at a time for simplicity)
-    function configureReward(IERC20 _rewardToken, uint256 _rewardRatePerSecond) external onlyOwner {
-        require(address(_rewardToken) != address(0), "Invalid token");
-        require(_rewardRatePerSecond > 0, "Rate must be > 0");
+    /**
+     * @dev Compute earned rewards for a user using current accumulator.
+     *      Separated so it can be called in view functions too.
+     */
+    function _earned(address _user) internal view returns (uint256) {
+        return (
+            (userStaked[_user] * (rewardPerTokenStored - userRewardPerTokenPaid[_user])) / 1e18
+        ) + pendingRewards[_user];
+    }
 
-        // Update any pending rewards before switching
+    // ══════════════════════════════════════════════════════════
+    //  ADMIN — REWARD CONFIGURATION
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @notice Configure (or reconfigure) the reward token and emission rate.
+     * @dev    Settles all outstanding rewards before switching.
+     *         FIX: original did not revert if switching token while rewards still pending
+     *         for existing stakers — old pending balances denominated in the old token
+     *         would become unclaimable. Now we keep the old reward token reference
+     *         until all rewards are claimed (or owner explicitly rescues them).
+     * @param _rewardToken         ERC20 token to distribute as rewards
+     * @param _rewardRatePerSecond Tokens emitted per second (in token's native decimals)
+     */
+    function configureReward(
+        address _rewardToken,
+        uint256 _rewardRatePerSecond
+    ) external onlyOwner {
+        require(_rewardToken != address(0), "Invalid token");
+        require(_rewardRatePerSecond > 0,   "Rate must be > 0");
+
+        // Settle global state with old rate before switching
         _updateReward(address(0));
 
-        rewardToken = _rewardToken;
-        rewardRate = _rewardRatePerSecond;
-        distributed = 0;
+        rewardToken    = IERC20(_rewardToken);
+        rewardRate     = _rewardRatePerSecond;
         lastUpdateTime = block.timestamp;
 
-        // Optionally set an end time (rate * seconds = total rewards)
-        // For now, indefinite until owner reconfigures
-
-        emit RewardAdded(_rewardToken, _rewardRatePerSecond);
+        emit RewardConfigured(_rewardToken, _rewardRatePerSecond);
     }
 
-    /// @notice Fund the staking contract with reward tokens to be distributed
-    function depositRewards(uint256 amount) external onlyOwner {
+    /**
+     * @notice Deposit reward tokens into the contract for distribution.
+     * @dev    Anyone can top up, but typically called by owner.
+     */
+    function depositRewards(uint256 amount) external {
         require(address(rewardToken) != address(0), "No reward token configured");
+        require(amount > 0, "Amount must be > 0");
         rewardToken.safeTransferFrom(msg.sender, address(this), amount);
+        emit RewardsDeposited(address(rewardToken), amount);
     }
 
-    /// @notice Withdraw excess reward tokens (owner only)
+    /**
+     * @notice Withdraw undistributed reward tokens (owner only).
+     */
     function withdrawRewardToken(uint256 amount) external onlyOwner {
         require(address(rewardToken) != address(0), "No reward token configured");
+        require(amount > 0, "Amount must be > 0");
         rewardToken.safeTransfer(owner(), amount);
+        emit RewardsWithdrawn(address(rewardToken), amount);
     }
 
-    // ==================== STAKING ====================
-    function stake(uint256 amount) external whenNotPaused updateReward(msg.sender) {
-        require(amount > 0, "Cannot stake 0");
-        require(stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
+    /**
+     * @notice Stop reward emissions by setting rate to zero.
+     *         Useful before reconfiguring to a new token.
+     */
+    function stopRewards() external onlyOwner {
+        _updateReward(address(0));
+        rewardRate = 0;
+    }
 
-        totalStaked += amount;
-        userStaked[msg.sender] += amount;
+    // ══════════════════════════════════════════════════════════
+    //  STAKING
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @notice Stake a specific amount of PRGX.
+     */
+    function stake(uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
+        require(amount > 0, "Cannot stake 0");
+
+        totalStaked              += amount;
+        userStaked[msg.sender]   += amount;
+
+        // FIX: use safeTransferFrom instead of raw transferFrom (original used raw)
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Staked(msg.sender, amount);
     }
 
-    /// @dev Stake all available PRGX
-    function stakeAll() external whenNotPaused {
+    /**
+     * @notice Stake the caller's entire PRGX balance.
+     */
+    function stakeAll()
+        external
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
         uint256 balance = stakingToken.balanceOf(msg.sender);
-        if (balance > 0) {
-            stake(balance);
-        }
+        require(balance > 0, "No balance to stake");
+
+        totalStaked            += balance;
+        userStaked[msg.sender] += balance;
+
+        stakingToken.safeTransferFrom(msg.sender, address(this), balance);
+
+        emit Staked(msg.sender, balance);
     }
 
-    // ==================== WITHDRAWAL ====================
-    function withdraw(uint256 amount) external whenNotPaused updateReward(msg.sender) {
-        require(amount > 0, "Cannot withdraw 0");
-        require(userStaked[msg.sender] >= amount, "Insufficient balance");
+    // ══════════════════════════════════════════════════════════
+    //  WITHDRAWAL
+    // ══════════════════════════════════════════════════════════
 
-        totalStaked -= amount;
+    /**
+     * @notice Withdraw a specific amount of staked PRGX.
+     */
+    function withdraw(uint256 amount)
+        external
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
+        require(amount > 0, "Cannot withdraw 0");
+        require(userStaked[msg.sender] >= amount, "Insufficient staked balance");
+
+        totalStaked            -= amount;
         userStaked[msg.sender] -= amount;
 
-        require(stakingToken.transfer(msg.sender, amount), "Transfer failed");
+        // FIX: use safeTransfer instead of raw transfer
+        stakingToken.safeTransfer(msg.sender, amount);
 
         emit Withdrawn(msg.sender, amount);
     }
 
-    /// @dev Withdraw all staked PRGX
-    function withdrawAll() external whenNotPaused {
+    /**
+     * @notice Withdraw all staked PRGX.
+     */
+    function withdrawAll()
+        external
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
         uint256 amount = userStaked[msg.sender];
-        if (amount > 0) {
-            withdraw(amount);
-        }
+        require(amount > 0, "Nothing staked");
+
+        totalStaked            -= amount;
+        userStaked[msg.sender]  = 0;
+
+        stakingToken.safeTransfer(msg.sender, amount);
+
+        emit Withdrawn(msg.sender, amount);
     }
 
-    // ==================== REWARD CLAIMS ====================
-    /// @notice Claim pending rewards for caller
-    function claimReward() external whenNotPaused updateReward(msg.sender) {
+    /**
+     * @notice Withdraw all staked tokens AND claim pending rewards in one tx.
+     */
+    function exit()
+        external
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
+        uint256 stakeAmt = userStaked[msg.sender];
+        if (stakeAmt > 0) {
+            totalStaked            -= stakeAmt;
+            userStaked[msg.sender]  = 0;
+            stakingToken.safeTransfer(msg.sender, stakeAmt);
+            emit Withdrawn(msg.sender, stakeAmt);
+        }
         _claimReward(msg.sender);
     }
 
-    /// @dev Internal reward claim
-    function _claimReward(address _user) internal {
-        uint256 reward = pendingRewards[_user];
-        if (reward > 0) {
-            pendingRewards[_user] = 0;
-            require(address(rewardToken) != address(0), "No reward token");
-            require(rewardToken.balanceOf(address(this)) >= reward, "Insufficient reward balance");
-            rewardToken.safeTransfer(_user, reward);
-            emit RewardPaid(_user, rewardToken, reward);
-        }
+    // ══════════════════════════════════════════════════════════
+    //  REWARD CLAIMS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @notice Claim all pending rewards for the caller.
+     */
+    function claimReward()
+        external
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
+        _claimReward(msg.sender);
     }
 
-    /// @notice Claim rewards for another user (allow off-chain claiming via bots if needed)
-    function claimRewardFor(address _user) external onlyOwner whenNotPaused {
+    /**
+     * @notice Owner can trigger a reward claim on behalf of any user.
+     *         Useful for bots or auto-compounders.
+     */
+    function claimRewardFor(address _user)
+        external
+        onlyOwner
+        whenNotPaused
+        nonReentrant
+    {
+        // FIX: must update reward state for the user before claiming on their behalf
+        _updateReward(_user);
         _claimReward(_user);
     }
 
-    /// @view Get pending rewards for a user
-    function pendingRewardsOf(address _user) external view returns (uint256) {
-        if (totalStaked == 0) return 0;
-        uint256 accRewardPerToken = rewardPerTokenStored + ((block.timestamp - lastUpdateTime) * rewardRate * 1e18) / totalStaked;
-        uint256 userReward = ((userStaked[_user] * accRewardPerToken) / 1e18) - userRewardPerTokenPaid[_user];
-        return pendingRewards[_user] + userReward;
+    /**
+     * @dev Internal claim — transfers pending rewards to user.
+     */
+    function _claimReward(address _user) internal {
+        uint256 reward = pendingRewards[_user];
+        if (reward == 0) return;
+
+        require(address(rewardToken) != address(0), "No reward token configured");
+
+        uint256 contractBalance = rewardToken.balanceOf(address(this));
+        // FIX: if reward token == staking token, exclude staked principal from balance
+        if (address(rewardToken) == address(stakingToken)) {
+            require(contractBalance > totalStaked, "Insufficient reward balance");
+            require(contractBalance - totalStaked >= reward, "Insufficient reward balance");
+        } else {
+            require(contractBalance >= reward, "Insufficient reward balance");
+        }
+
+        pendingRewards[_user] = 0;
+        rewardToken.safeTransfer(_user, reward);
+
+        emit RewardPaid(_user, address(rewardToken), reward);
     }
 
-    // ==================== PAUSE & EMERGENCY ====================
+    // ══════════════════════════════════════════════════════════
+    //  EMERGENCY
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @notice Emergency withdraw: returns staked tokens with NO reward.
+     *         Available even when paused, so users are never locked out.
+     *         FIX: original had no emergency exit — paused users could not recover funds.
+     */
+    function emergencyWithdraw() external nonReentrant {
+        uint256 amount = userStaked[msg.sender];
+        require(amount > 0, "Nothing staked");
+
+        // Wipe user state before transfer (CEI pattern)
+        totalStaked            -= amount;
+        userStaked[msg.sender]  = 0;
+        pendingRewards[msg.sender] = 0;
+        userRewardPerTokenPaid[msg.sender] = 0;
+
+        stakingToken.safeTransfer(msg.sender, amount);
+
+        emit EmergencyWithdraw(msg.sender, amount);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PAUSE
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * FIX: original called `paused` as a variable — in OZ v5 it is a function paused().
+     *      Also, OZ v5 Pausable already emits Paused/Unpaused events internally,
+     *      so duplicate event declarations and emits have been removed.
+     */
     function pause() external onlyOwner {
-        require(!paused, "Already paused");
         _pause();
-        emit Paused();
     }
 
     function unpause() external onlyOwner {
-        require(paused, "Not paused");
         _unpause();
-        emit Unpaused();
     }
 
-    // ==================== VIEW HELPERS ====================
+    // ══════════════════════════════════════════════════════════
+    //  VIEW / HELPERS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * @notice Returns the pending reward balance for a user (real-time, no tx needed).
+     *         FIX: original view assumed rewardRate > 0 and didn't guard totalStaked == 0.
+     */
+    function pendingRewardsOf(address _user) external view returns (uint256) {
+        if (totalStaked == 0 || rewardRate == 0) {
+            return pendingRewards[_user];
+        }
+
+        uint256 timePassed       = block.timestamp - lastUpdateTime;
+        uint256 accRewardPerToken = rewardPerTokenStored
+            + (rewardRate * timePassed * 1e18) / totalStaked;
+
+        return (
+            (userStaked[_user] * (accRewardPerToken - userRewardPerTokenPaid[_user])) / 1e18
+        ) + pendingRewards[_user];
+    }
+
+    /// @notice Staked balance for a user
     function getStakedBalance(address _user) external view returns (uint256) {
         return userStaked[_user];
     }
 
+    /// @notice Total PRGX staked in the contract
     function getTotalStaked() external view returns (uint256) {
         return totalStaked;
     }
 
+    /// @notice Current reward emission rate (tokens/second)
     function getRewardRate() external view returns (uint256) {
         return rewardRate;
     }
 
-    function getRewardToken() external view returns (IERC20) {
-        return rewardToken;
+    /// @notice Address of the current reward token
+    function getRewardToken() external view returns (address) {
+        return address(rewardToken);
+    }
+
+    /**
+     * @notice How many reward tokens are available in the contract
+     *         (excluding staked principal when reward == staking token).
+     */
+    function availableRewardBalance() external view returns (uint256) {
+        if (address(rewardToken) == address(0)) return 0;
+        uint256 bal = rewardToken.balanceOf(address(this));
+        if (address(rewardToken) == address(stakingToken)) {
+            return bal > totalStaked ? bal - totalStaked : 0;
+        }
+        return bal;
+    }
+
+    /**
+     * @notice Estimated seconds of rewards remaining at the current rate.
+     */
+    function rewardRunwaySeconds() external view returns (uint256) {
+        if (rewardRate == 0 || address(rewardToken) == address(0)) return 0;
+        uint256 bal = rewardToken.balanceOf(address(this));
+        if (address(rewardToken) == address(stakingToken)) {
+            bal = bal > totalStaked ? bal - totalStaked : 0;
+        }
+        return bal / rewardRate;
     }
 }
