@@ -28,31 +28,31 @@ class PurgeXAgentOrchestrator {
       {
         id: 'tokenomics-analyst',
         name: 'Tokenomics Analyst',
-        script: 'agents/research-tokenomics.js',
+        script: 'research-tokenomics.js',
         purpose: 'Analyze PRGX price, liquidity, volume; recommend bonus amounts'
       },
       {
         id: 'competitor-research',
         name: 'Competitor Researcher',
-        script: 'agents/research-competitors.js',
+        script: 'research-competitors.js',
         purpose: 'Research similar protocols: DustSweep, TokenCleaner, etc.'
       },
       {
         id: 'treasury-modeler',
         name: 'Treasury Modeler',
-        script: 'agents/treasury-analysis.js',
+        script: 'treasury-analysis.js',
         purpose: 'Model treasury sustainability under different bonus scenarios'
       },
       {
         id: 'liquidity-strategist',
         name: 'Liquidity Strategist',
-        script: 'agents/liquidity-analysis.js',
+        script: 'liquidity-analysis.js',
         purpose: 'Optimize liquidity deployment across pools'
       },
       {
         id: 'community-growth',
         name: 'Community Growth Agent',
-        script: 'agents/growth-analysis.js',
+        script: 'growth-analysis.js',
         purpose: 'Project user acquisition, retention, and viral coefficient'
       }
     ];

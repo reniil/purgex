@@ -1,0 +1,128 @@
+{
+  "currentLiquidity": {
+    "total": 44.6,
+    "pools": [
+      {
+        "address": "0xc76f9b605A929A35f1A6d8b200630e84e27caaeb",
+        "token0": "PRGX",
+        "token1": "WPLS",
+        "liquidityUSD": 21.66,
+        "volume24h": 35.06,
+        "apr": 0
+      },
+      {
+        "address": "0x650a681cE97fAb9DaA53756bb2f1De287E8427A1",
+        "token0": "PRGX",
+        "token1": "USDC",
+        "liquidityUSD": 6.47,
+        "volume24h": 17.84,
+        "apr": 0
+      },
+      {
+        "address": "0xCBA79D47e11e35A258f26AE1Fe912a0809670eE2",
+        "token0": "PRGX",
+        "token1": "PRVX",
+        "liquidityUSD": 6.79,
+        "volume24h": 2.07,
+        "apr": 0
+      },
+      {
+        "address": "0xaa93499Ad88557cC774afE57D65fac63E8e23247",
+        "token0": "PRGX",
+        "token1": "WETH",
+        "liquidityUSD": 6.72,
+        "volume24h": 0.79,
+        "apr": 0
+      },
+      {
+        "address": "0x47437aBa8D6da40456a412014fA1E16041d8720d",
+        "token0": "PRGX",
+        "token1": "WBTC",
+        "liquidityUSD": 2.96,
+        "volume24h": 0.07,
+        "apr": 0
+      }
+    ],
+    "poolCount": 5
+  },
+  "deploymentPlan": [
+    {
+      "pool": "PRGX/WPLS",
+      "targetUSD": 500000,
+      "currentUSD": 21.66,
+      "neededUSD": 499978.34,
+      "neededPRGX": 499978340,
+      "priority": 0.99995668
+    },
+    {
+      "pool": "PRGX/WBTC",
+      "targetUSD": 25000,
+      "currentUSD": 2.96,
+      "neededUSD": 24997.04,
+      "neededPRGX": 24997040,
+      "priority": 0.9998816
+    },
+    {
+      "pool": "PRGX/USDC",
+      "targetUSD": 50000,
+      "currentUSD": 6.47,
+      "neededUSD": 49993.53,
+      "neededPRGX": 49993530,
+      "priority": 0.9998705999999999
+    },
+    {
+      "pool": "PRGX/WETH",
+      "targetUSD": 50000,
+      "currentUSD": 6.72,
+      "neededUSD": 49993.28,
+      "neededPRGX": 49993280,
+      "priority": 0.9998656
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "HIGH",
+      "action": "Deploy 500M PRGX to PRGX/WPLS pool immediately",
+      "reason": "Primary pool needs deep liquidity for low slippage",
+      "impact": "Critical"
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Deploy pools in order: WPLS → USDC → WETH → WBTC",
+      "reason": "WPLS is native chain, highest volume expected",
+      "impact": "High"
+    },
+    {
+      "priority": "HIGH",
+      "action": "Lock all LP tokens with Team Finance for 2 years",
+      "reason": "Prevents rug pull, builds trust",
+      "impact": "Critical"
+    },
+    {
+      "priority": "HIGH",
+      "action": "Launch liquidity mining with 50M PRGX over 2 years",
+      "reason": "Attract LPs to reach target faster",
+      "impact": "High"
+    },
+    {
+      "priority": "MEDIUM",
+      "action": "Monitor liquidity-to-volume ratio weekly",
+      "reason": "Target: >30% ratio for healthy market",
+      "impact": "Medium"
+    }
+  ],
+  "gap": 624955.4,
+  "percentComplete": "0.0",
+  "health": {
+    "avgPoolSize": 8.92,
+    "largestPool": {
+      "address": "0xc76f9b605A929A35f1A6d8b200630e84e27caaeb",
+      "token0": "PRGX",
+      "token1": "WPLS",
+      "liquidityUSD": 21.66,
+      "volume24h": 35.06,
+      "apr": 0
+    },
+    "isHealthy": false
+  }
+}

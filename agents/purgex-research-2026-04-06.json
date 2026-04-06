@@ -1,0 +1,111 @@
+{
+  "timestamp": "2026-04-06T11:24:29.018Z",
+  "results": {
+    "prgxPrice": {
+      "sources": [
+        {
+          "source": "DEXScreener",
+          "price": 6.434e-8
+        }
+      ],
+      "median": 6.434e-8,
+      "avg": 6.434e-8,
+      "min": 6.434e-8,
+      "max": 6.434e-8
+    },
+    "liquidity": {
+      "totalLiquidity": 44.6,
+      "pools": [
+        {
+          "pair": "0xc76f9b605A929A35f1A6d8b200630e84e27caaeb",
+          "token0": "PRGX",
+          "token1": "WPLS",
+          "liquidityUSD": 21.66,
+          "volume24hUSD": 35.06,
+          "apr": 0
+        },
+        {
+          "pair": "0x650a681cE97fAb9DaA53756bb2f1De287E8427A1",
+          "token0": "PRGX",
+          "token1": "USDC",
+          "liquidityUSD": 6.47,
+          "volume24hUSD": 17.84,
+          "apr": 0
+        },
+        {
+          "pair": "0xCBA79D47e11e35A258f26AE1Fe912a0809670eE2",
+          "token0": "PRGX",
+          "token1": "PRVX",
+          "liquidityUSD": 6.79,
+          "volume24hUSD": 2.07,
+          "apr": 0
+        },
+        {
+          "pair": "0xaa93499Ad88557cC774afE57D65fac63E8e23247",
+          "token0": "PRGX",
+          "token1": "WETH",
+          "liquidityUSD": 6.72,
+          "volume24hUSD": 0.79,
+          "apr": 0
+        },
+        {
+          "pair": "0x47437aBa8D6da40456a412014fA1E16041d8720d",
+          "token0": "PRGX",
+          "token1": "WBTC",
+          "liquidityUSD": 2.96,
+          "volume24hUSD": 0.07,
+          "apr": 0
+        }
+      ],
+      "poolCount": 5
+    },
+    "volume": {
+      "volume24h": 35.06,
+      "volume7d": 0,
+      "volume30d": 0,
+      "txns24h": {
+        "buys": 0,
+        "sells": 0
+      }
+    },
+    "tokenomics": {
+      "totalSupply": 1000000000,
+      "circulatingSupply": 150000000,
+      "circulatingPercent": "15.00",
+      "fdv": 64.34,
+      "marketCap": 9.651000000000002,
+      "priceUSD": 6.434e-8,
+      "liquidityDepth": 44.6,
+      "liquidityToMarketCapRatio": "462.13"
+    },
+    "recommendations": [
+      {
+        "category": "Bonus Optimization",
+        "analysis": "Price: $0.00000006 PRGX. Cost per sweep: {\"50\":0.0000032170000000000003,\"100\":0.0000064340000000000006,\"200\":0.000012868000000000001,\"500\":0.000032170000000000005}. Budget can support: {\"50\":500000,\"100\":250000,\"200\":125000,\"500\":50000} sweeps.",
+        "recommendation": "Use 100 PRGX bonus. Cost per user: $0.000006. Can fund 250,000 sweeps from 25M allocation."
+      },
+      {
+        "category": "Liquidity",
+        "analysis": "Current liquidity: $44.60. Target: $625000.00.",
+        "recommendation": "Urgently deploy 500M PRGX + matching WPLS to PulseX. Use Team Finance locker for 2-year lock."
+      },
+      {
+        "category": "Treasury",
+        "analysis": "Treasury: 250M PRGX (25% supply).",
+        "recommendation": "Set up 3/5 multi-sig wallet. Implement 2-year vesting schedule with quarterly unlocks. Create public dashboard for transparency."
+      },
+      {
+        "category": "Staking",
+        "analysis": "Staking allocation: 50M PRGX over 2 years (~68,500/day).",
+        "recommendation": "Deploy staking vault immediately. Offer tiered APRs: Bronze 10%, Silver 12%, Gold 15%, Diamond 20%. Include sweep bonus multipliers."
+      }
+    ]
+  },
+  "summary": {
+    "prgxPriceUSD": 6.434e-8,
+    "totalLiquidityUSD": 44.6,
+    "marketCapUSD": 9.651000000000002,
+    "circulatingSupplyPRGX": 150000000,
+    "recommendation": "Use 100 PRGX bonus. Cost per user: $0.000006. Can fund 250,000 sweeps from 25M allocation."
+  }
+}

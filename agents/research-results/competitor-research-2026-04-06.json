@@ -1,0 +1,100 @@
+{
+  "competitors": [
+    {
+      "name": "DustSweep",
+      "chain": "Ethereum",
+      "fee": "10%",
+      "features": [
+        "Auto-sweep",
+        "Gas optimization",
+        "Batch claims"
+      ],
+      "weakness": "High fees, no bonuses",
+      "tokenomics": "No native token"
+    },
+    {
+      "name": "TokenCleaner",
+      "chain": "Polygon",
+      "fee": "5%",
+      "features": [
+        "Custom thresholds",
+        "Recurring sweeps"
+      ],
+      "weakness": "Limited chain support",
+      "tokenomics": "Utility token (10% fee discount)"
+    },
+    {
+      "name": "DustSwap",
+      "chain": "BSC",
+      "fee": "Variable (2-8%)",
+      "features": [
+        "DEX aggregation",
+        "Best price routing"
+      ],
+      "weakness": "No wallet gamification",
+      "tokenomics": "Governance token"
+    }
+  ],
+  "features": [],
+  "pricing": [
+    {
+      "type": "Percentage Fee",
+      "range": "5-10%",
+      "common": true,
+      "pros": [
+        "Simple",
+        "Aligns with value"
+      ],
+      "cons": [
+        "Can be expensive for large amounts"
+      ]
+    },
+    {
+      "type": "Fixed Fee",
+      "range": "$0.50-2.00",
+      "common": false,
+      "pros": [
+        "Predictable",
+        "Fair for small amounts"
+      ],
+      "cons": [
+        "Unfair for large sweeps",
+        "Not used"
+      ]
+    },
+    {
+      "type": "Hybrid",
+      "range": "Minimum $0.50 + 2%",
+      "common": false,
+      "pros": [
+        "Best of both worlds"
+      ],
+      "cons": [
+        "Complex"
+      ]
+    }
+  ],
+  "weaknesses": [],
+  "opportunities": [
+    {
+      "advantage": "Low Fee + Bonus",
+      "description": "5% sweep fee + 100 PRGX bonus beats competitors' 10% with no reward",
+      "impact": "High"
+    },
+    {
+      "advantage": "Gamification",
+      "description": "Leaderboards, achievements, referral program - none have this",
+      "impact": "Medium"
+    },
+    {
+      "advantage": "Multi-chain",
+      "description": "Start on PulseChain, expand to other chains (Ethereum, Polygon, BSC)",
+      "impact": "High"
+    },
+    {
+      "advantage": "Tokenomics",
+      "description": "Native PRGX with utility (staking, governance, fee discounts)",
+      "impact": "Medium"
+    }
+  ]
+}
