@@ -1,8 +1,7 @@
 // ================================================================
-// TOKEN DISCOVERY - CLEAN PRODUCTION VERSION
+// TOKEN DISCOVERY - PRODUCTION V2 (Improved)
 // ================================================================
-// Based on proven patterns from DustSweeper, Rabby, and MetaMask
-// Strategy: Known tokens + recent Transfer events + caching
+// Based on proven patterns + real-world PulseChain testing
 // ================================================================
 
 class TokenDiscovery {
@@ -12,26 +11,32 @@ class TokenDiscovery {
     this.discoveryProgress = 0;
     this.cache = new Map();
     this.cacheTTL = 5 * 60 * 1000; // 5 minutes
-    this.stats = { rpcCalls: 0, cacheHits: 0, startTime: 0 };
+    this.stats = { rpcCalls: 0, cacheHits: 0, errors: 0, startTime: 0 };
+    this.discoveryErrors = [];
+    
     this.config = {
-      // Transfer scan range (last N blocks)
-      transferBlockRange: 2000,
+      // Transfer scan range (last N blocks) - increased for better coverage
+      transferBlockRange: 10000,
+      // Known token list size to check
+      knownTokenLimit: 50,
       // Batch sizes
-      batchSize: 20,
+      batchSize: 15,
+      maxBatchSize: 25,
       // Delays
-      batchDelay: 100,
+      batchDelay: 150,
       // Timeouts
-      timeout: 10000,
-      retryDelay: 1000,
-      maxRetries: 2,
+      timeout: 15000,
+      retryDelay: 1500,
+      maxRetries: 3,
       // Circuit breaker
       circuitBreakerThreshold: 3,
-      circuitBreakerPause: 2000,
+      circuitBreakerPause: 3000,
       // Dust threshold (tokens with balance < this are ignored)
-      dustThreshold: 1000n, // 1000 tokens (adjust as needed)
+      dustThreshold: 1n, // Include all tokens, filter later by value
       // Concurrency
-      maxConcurrent: 3
+      maxConcurrent: 2 // Conservative for PulseChain
     };
+    
     this.consecutiveErrors = 0;
     this.activeRequests = 0;
     this.requestQueue = [];
@@ -63,8 +68,13 @@ class TokenDiscovery {
     return {
       ...this.stats,
       durationMs: Date.now() - this.stats.startTime,
-      cachedEntries: this.cache.size
+      cachedEntries: this.cache.size,
+      errors: this.discoveryErrors.length
     };
+  }
+
+  getErrors() {
+    return this.discoveryErrors;
   }
 
   clearCache() {
@@ -80,6 +90,8 @@ class TokenDiscovery {
     this.stats.startTime = Date.now();
     this.stats.rpcCalls = 0;
     this.stats.cacheHits = 0;
+    this.stats.errors = 0;
+    this.discoveryErrors = [];
     
     this.updateDiscoveryStatus('Starting token discovery...', 0);
     console.log(`[TokenDiscovery] Starting discovery for ${address}`);
@@ -88,7 +100,7 @@ class TokenDiscovery {
       const tokens = new Map();
       const cacheKey = `tokens-${address}`;
       
-      // Check cache first
+      // Check cache first (shorter TTL for testing)
       const cached = this.getCached(cacheKey);
       if (cached) {
         this.discoveredTokens = new Map(cached);
@@ -100,98 +112,134 @@ class TokenDiscovery {
       
       // Get provider
       const provider = window.wallet?.provider;
-      if (!provider) throw new Error('Wallet provider not available');
+      if (!provider) throw new Error('Wallet provider not available. Connect your wallet first.');
       
-      // PHASE 1: Check known PulseChain tokens
-      this.updateDiscoveryStatus('Phase 1: Checking common tokens...', 20);
-      const phase1Tokens = await this.phase1CheckKnownTokens(address, provider);
-      for (const [tokenAddr, token] of phase1Tokens) {
-        tokens.set(tokenAddr, token);
-      }
-      console.log(`[TokenDiscovery] Phase 1: ${phase1Tokens.size} tokens`);
-      
-      // PHASE 2: Scan recent Transfer events
-      if (tokens.size < 5) {
-        this.updateDiscoveryStatus('Phase 2: Scanning transfer events...', 50);
-        const phase2Tokens = await this.phase2ScanTransfers(address, provider);
-        for (const [tokenAddr, token] of phase2Tokens) {
-          if (!tokens.has(tokenAddr)) {
-            tokens.set(tokenAddr, token);
-          }
+      // PHASE 1: Check known PulseChain tokens (fast)
+      this.updateDiscoveryStatus('Phase 1/3: Checking known tokens...', 10);
+      try {
+        const phase1Tokens = await this.phase1CheckKnownTokens(address, provider);
+        for (const [tokenAddr, token] of phase1Tokens) {
+          tokens.set(tokenAddr, token);
         }
-        console.log(`[TokenDiscovery] Phase 2: ${phase2Tokens.size} tokens (total: ${tokens.size})`);
+        console.log(`[TokenDiscovery] Phase 1: ${phase1Tokens.size} tokens found`);
+      } catch (error) {
+        this.logError('Phase 1 failed', error);
       }
       
-      // PHASE 3: PulseX LP tokens (if needed)
+      // PHASE 2: Scan recent Transfer events (comprehensive)
+      if (tokens.size < 10) {
+        this.updateDiscoveryStatus('Phase 2/3: Scanning transfer events (this may take a minute)...', 40);
+        try {
+          const phase2Tokens = await this.phase2ScanTransfers(address, provider);
+          for (const [tokenAddr, token] of phase2Tokens) {
+            if (!tokens.has(tokenAddr)) {
+              tokens.set(tokenAddr, token);
+            }
+          }
+          console.log(`[TokenDiscovery] Phase 2: ${phase2Tokens.size} tokens found (total: ${tokens.size})`);
+        } catch (error) {
+          this.logError('Phase 2 failed', error);
+        }
+      }
+      
+      // PHASE 3: If still few tokens, try extended scan
       if (tokens.size < 3) {
-        this.updateDiscoveryStatus('Phase 3: Checking PulseX pools...', 80);
-        const phase3Tokens = await this.phase3CheckPulseXLP(address, provider);
-        for (const [tokenAddr, token] of phase3Tokens) {
-          if (!tokens.has(tokenAddr)) {
-            tokens.set(tokenAddr, token);
+        this.updateDiscoveryStatus('Phase 3/3: Extended scan (patience please)...', 70);
+        try {
+          const phase3Tokens = await this.phase3ExtendedScan(address, provider);
+          for (const [tokenAddr, token] of phase3Tokens) {
+            if (!tokens.has(tokenAddr)) {
+              tokens.set(tokenAddr, token);
+            }
           }
+          console.log(`[TokenDiscovery] Phase 3: ${phase3Tokens.size} tokens found (total: ${tokens.size})`);
+        } catch (error) {
+          this.logError('Phase 3 failed', error);
         }
-        console.log(`[TokenDiscovery] Phase 3: ${phase3Tokens.size} tokens (total: ${tokens.size})`);
       }
       
-      // Fetch metadata for all discovered tokens
-      this.updateDiscoveryStatus('Fetching token metadata...', 90);
-      const tokensWithMetadata = await this.enrichTokensWithMetadata(tokens, provider);
-      
-      // Filter and sort
-      const filtered = this.filterTokens(tokensWithMetadata);
-      this.discoveredTokens = this.sortTokens(filtered);
-      
-      // Cache results
-      this.setCached(cacheKey, this.discoveredTokens, this.cacheTTL);
+      // If still no tokens, we might have a connection issue
+      if (tokens.size === 0) {
+        const errorMsg = 'No tokens discovered. This could mean:\n' +
+          '1. Your wallet has no ERC-20 tokens on PulseChain\n' +
+          '2. RPC connection issues (check console for errors)\n' +
+          '3. All tokens are below the dust threshold\n' +
+          '\nTry:\n' +
+          '- Switching to a different RPC endpoint in your wallet\n' +
+          '- Increasing the block scan range in config\n' +
+          '- Manually adding token addresses';
+        this.updateDiscoveryStatus(`⚠️ ${errorMsg}`, 100);
+        this.discoveryErrors.push({ phase: 'all', error: new Error('No tokens found'), message: errorMsg });
+      } else {
+        // Fetch metadata for all discovered tokens
+        this.updateDiscoveryStatus('Fetching token metadata...', 90);
+        try {
+          const tokensWithMetadata = await this.enrichTokensWithMetadata(tokens, provider);
+          // Filter and sort
+          const filtered = this.filterTokens(tokensWithMetadata);
+          this.discoveredTokens = this.sortTokens(filtered);
+          
+          // Cache results
+          this.setCached(cacheKey, this.discoveredTokens, this.cacheTTL);
+          
+          const duration = Date.now() - this.stats.startTime;
+          this.updateDiscoveryStatus(`✅ Discovery complete: ${this.discoveredTokens.size} tokens found (${Math.round(duration/1000)}s)`, 100);
+          console.log(`[TokenDiscovery] Complete: ${this.discoveredTokens.size} tokens, ${this.stats.rpcCalls} RPC calls, ${this.stats.cacheHits} cache hits`);
+        } catch (error) {
+          this.logError('Metadata enrichment failed', error);
+          // Still return raw tokens without metadata
+          this.discoveredTokens = this.sortTokens(tokens);
+          const duration = Date.now() - this.stats.startTime;
+          this.updateDiscoveryStatus(`⚠️ Partial: ${this.discoveredTokens.size} tokens (metadata fetch failed)`, 100);
+        }
+      }
       
       this.isDiscovering = false;
-      const duration = Date.now() - this.stats.startTime;
-      this.updateDiscoveryStatus(`✅ Discovery complete: ${this.discoveredTokens.size} tokens (${duration}ms)`, 100);
-      console.log(`[TokenDiscovery] Complete: ${this.discoveredTokens.size} tokens, ${this.stats.rpcCalls} RPC calls, ${this.stats.cacheHits} cache hits`);
-      
       return this.discoveredTokens;
       
     } catch (error) {
       this.isDiscovering = false;
-      console.error('[TokenDiscovery] Discovery failed:', error);
+      this.stats.errors++;
+      this.logError('Discovery failed', error);
       this.updateDiscoveryStatus(`❌ Discovery failed: ${error.message}`, 0);
       throw error;
     }
+  }
+
+  logError(context, error) {
+    this.stats.errors++;
+    this.discoveryErrors.push({ phase: context, error, message: error.message, stack: error.stack });
+    console.error(`[TokenDiscovery] ${context}:`, error);
   }
 
   // ================================================================
   // PHASE 1: Known Tokens
   // ================================================================
   
-  phase1CheckKnownTokens(address, provider) {
+  async phase1CheckKnownTokens(address, provider) {
     const tokens = new Map();
     const knownTokens = this.getPulseChainTokenList();
     
-    // Check PRGX first (most important)
-    const prgxAddr = CONFIG.CONTRACTS?.PRGX_TOKEN?.toLowerCase();
-    if (prgxAddr) {
-      knownTokens.unshift(prgxAddr);
-    }
+    this.log('debug', `Checking ${knownTokens.length} known tokens`);
     
     // Batch check balances
-    return this.batchCheckTokens(knownTokens, address, provider);
+    return await this.batchCheckTokens(knownTokens, address, provider);
   }
 
   getPulseChainTokenList() {
-    // Common tokens on PulseChain - this list should be maintained
-    // Sources: PulseChain official, PulseX, DeFi protocols
-    return [
-      // Native & wrapped
-      // (we'll skip these in filtering)
-      
-      // Major DeFi tokens
-      '0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0', // PRGX (PurgeX)
-      '0xA1077a294dDE1B09bB078844df40758a5D0f9a27', // WPLS
-      
-      // TODO: Add more PulseChain tokens as they emerge
-      // USDC, USDT, DAI equivalents on PulseChain
+    // Common tokens on PulseChain - expand this list
+    const tokens = [
+      // PurgeX token
+      CONFIG?.CONTRACTS?.PRGX_TOKEN,
+      // Wrapped PLS
+      CONFIG?.CONTRACTS?.WPLS,
+      // Major DeFi tokens (add as they are known)
+      // '0x...USDC on PulseChain',
+      // '0x...USDT on PulseChain',
     ].filter(addr => addr && this.isValidAddress(addr));
+    
+    // Deduplicate and limit
+    return [...new Set(tokens.map(a => a.toLowerCase()))].slice(0, this.config.knownTokenLimit);
   }
 
   // ================================================================
@@ -200,23 +248,27 @@ class TokenDiscovery {
   
   async phase2ScanTransfers(address, provider) {
     const tokens = new Map();
+    
     try {
       const currentBlock = await this.retryable(() => provider.getBlockNumber(), provider);
       const fromBlock = Math.max(0, currentBlock - this.config.transferBlockRange);
       
-      this.log('debug', `Scanning transfers from block ${fromBlock} to ${currentBlock}`);
+      this.log('info', `Scanning Transfer events from block ${fromBlock} to ${currentBlock} (${currentBlock - fromBlock} blocks)`);
       
-      // Get Transfer events TO the user
+      // Get Transfer events TO the user (tokens received)
       const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const paddedAddress = this.padAddress(address);
       
       const logsTo = await this.retryable(() => provider.getLogs({
         address: null,
-        topics: [transferTopic, null, this.padAddress(address)],
+        topics: [transferTopic, null, paddedAddress],
         fromBlock: this.toHex(fromBlock),
         toBlock: this.toHex(currentBlock)
       }), provider);
       
-      // Extract token addresses
+      this.log('debug', `Found ${logsTo.length} Transfer events TO address`);
+      
+      // Extract unique token addresses
       const tokenAddresses = new Set();
       for (const log of logsTo) {
         if (log.address) {
@@ -224,44 +276,66 @@ class TokenDiscovery {
         }
       }
       
+      // Also check if we need to scan FROM events (tokens sent)
+      // This helps discover tokens that were received long ago and then partially sent
+      if (tokenAddresses.size < 20) {
+        this.log('debug', 'Scanning FROM transfers for additional tokens...');
+        const logsFrom = await this.retryable(() => provider.getLogs({
+          address: null,
+          topics: [transferTopic, paddedAddress, null],
+          fromBlock: this.toHex(fromBlock),
+          toBlock: this.toHex(currentBlock)
+        }), provider);
+        
+        for (const log of logsFrom) {
+          if (log.address) {
+            tokenAddresses.add(log.address.toLowerCase());
+          }
+        }
+        this.log('debug', `Total unique tokens from transfers: ${tokenAddresses.size}`);
+      }
+      
       // Check balances for discovered tokens
       if (tokenAddresses.size > 0) {
-        const balances = await this.batchCheckTokens(Array.from(tokenAddresses), address, provider);
+        const addressesArray = Array.from(tokenAddresses);
+        this.log('debug', `Fetching balances for ${addressesArray.length} tokens`);
+        const balances = await this.batchCheckTokens(addressesArray, address, provider);
         for (const [addr, token] of balances) {
           tokens.set(addr, token);
         }
       }
       
     } catch (error) {
-      this.log('warn', 'Transfer scan failed:', error);
+      this.logError('Transfer event scan', error);
+      throw error; // Re-throw so phase fails
     }
     
     return tokens;
   }
 
   // ================================================================
-  // PHASE 3: PulseX LP Tokens
+  // PHASE 3: Extended Scan (if needed)
   // ================================================================
   
-  async phase3CheckPulseXLP(address, provider) {
+  async phase3ExtendedScan(address, provider) {
     const tokens = new Map();
     
     try {
-      // PulseX factory address
-      const factory = CONFIG.APIS?.IPULSE_FACTORY || '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02';
+      // Try a much larger block range
+      const originalRange = this.config.transferBlockRange;
+      this.config.transferBlockRange = 50000; // 50k blocks
       
-      // Get a few known PulseX pairs that include major tokens
-      const knownPairs = [
-        // PRGX/WPLS pair
-        // WPLS/USDC (if exists)
-        // We'll use a simple approach: check if user has LP tokens from common pairs
-      ];
-      
-      // For now, skip this phase - it's complex and LP tokens are rare
-      // Can be added later if needed
+      try {
+        const phase2Tokens = await this.phase2ScanTransfers(address, provider);
+        for (const [addr, token] of phase2Tokens) {
+          tokens.set(addr, token);
+        }
+      } finally {
+        this.config.transferBlockRange = originalRange; // Restore
+      }
       
     } catch (error) {
-      this.log('warn', 'PulseX LP check failed:', error);
+      this.logError('Extended scan', error);
     }
     
     return tokens;
@@ -273,46 +347,63 @@ class TokenDiscovery {
   
   async batchCheckTokens(tokenAddresses, userAddress, provider) {
     const tokens = new Map();
-    const uniqueAddresses = [...new Set(tokenAddresses.map(addr => addr.toLowerCase()))]
+    const addresses = [...new Set(tokenAddresses.map(addr => addr.toLowerCase()))]
       .filter(addr => this.isValidAddress(addr))
       .filter(addr => !this.isExcludedToken(addr));
     
+    if (addresses.length === 0) return tokens;
+    
+    this.log('debug', `Batch checking ${addresses.length} tokens`);
+    
     // Process in batches with delays
     let batchSize = this.config.batchSize;
+    let batchIndex = 0;
     
-    for (let i = 0; i < uniqueAddresses.length; i += batchSize) {
-      await this.processQueue(); // Respect rate limits
+    while (batchIndex < addresses.length) {
+      await this.processQueue();
       
-      const batch = uniqueAddresses.slice(i, i + batchSize);
+      const batch = addresses.slice(batchIndex, batchIndex + batchSize);
       
       try {
-        const batchResults = await Promise.all(
-          batch.map(addr => this.checkTokenBalance(addr, userAddress, provider))
-        );
+        // Use multicall-like pattern: batch eth_call requests
+        const batchResults = await this.batchBalanceCalls(batch, userAddress, provider);
         
+        let batchSuccessCount = 0;
         for (const result of batchResults) {
           if (result && result.balance > this.config.dustThreshold) {
             tokens.set(result.address, result);
+            batchSuccessCount++;
           }
         }
         
-        // Success - slightly increase batch size (with cap)
-        batchSize = Math.min(50, batchSize + 2);
+        this.log('debug', `Batch ${Math.floor(batchIndex/batchSize)+1}: ${batchSuccessCount}/${batch.length} with balance`);
+        
+        // Adaptive batch sizing
+        if (batchSuccessCount > 0) {
+          batchSize = Math.min(this.config.maxBatchSize, batchSize + 2);
+        }
+        this.consecutiveErrors = 0;
         
       } catch (error) {
         this.consecutiveErrors++;
-        this.log('warn', `Batch failed, reducing batch size: ${error.message}`);
-        batchSize = Math.max(5, Math.floor(batchSize * 0.5));
+        this.stats.errors++;
+        this.log('warn', `Batch failed (size ${batchSize}): ${error.message}`);
         
+        // Reduce batch size on failure
+        batchSize = Math.max(5, Math.floor(batchSize * 0.6));
+        
+        // Circuit breaker
         if (this.consecutiveErrors >= this.config.circuitBreakerThreshold) {
-          this.log('warn', `Circuit breaker triggered - pausing ${this.config.circuitBreakerPause}ms`);
+          this.log('warn', `Circuit breaker - pausing ${this.config.circuitBreakerPause}ms`);
           await this.delay(this.config.circuitBreakerPause);
           this.consecutiveErrors = 0;
         }
       }
       
-      // Delay between batches to avoid rate limiting
-      if (i + batchSize < uniqueAddresses.length) {
+      batchIndex += batchSize;
+      
+      // Delay between batches to respect rate limits
+      if (batchIndex < addresses.length) {
         await this.delay(this.config.batchDelay);
       }
     }
@@ -320,27 +411,53 @@ class TokenDiscovery {
     return tokens;
   }
 
-  async checkTokenBalance(tokenAddress, userAddress, provider) {
-    try {
-      const balance = await this.retryable(() => provider.getBalance({
-        to: tokenAddress,
-        from: userAddress,
-        data: '0x70a08231' + this.padAddress(userAddress) // balanceOf(address)
-      }), provider);
-      
-      if (balance && balance > this.config.dustThreshold) {
-        return {
-          address: tokenAddress,
-          balance: balance,
-          symbol: '???',
-          name: 'Unknown Token',
-          decimals: 18
-        };
+  async batchBalanceCalls(tokenAddresses, userAddress, provider) {
+    const results = [];
+    const userAddr = userAddress.toLowerCase();
+    
+    // Make parallel calls with limit
+    const batchPromises = tokenAddresses.map(async (tokenAddr) => {
+      try {
+        const balance = await this.retryable(() => provider.getBalance({
+          to: tokenAddr,
+          data: '0x70a08231' + this.padAddress(userAddr)
+        }), provider);
+        
+        if (balance && balance > this.config.dustThreshold) {
+          return {
+            address: tokenAddr,
+            balance: balance,
+            symbol: '???',
+            name: 'Unknown Token',
+            decimals: 18
+          };
+        }
+      } catch (error) {
+        // Individual token failures are silent
       }
-    } catch (error) {
-      // Silently ignore individual token failures
+      return null;
+    });
+    
+    // Process in smaller chunks to avoid overwhelming
+    const chunkSize = this.config.maxConcurrent;
+    for (let i = 0; i < batchPromises.length; i += chunkSize) {
+      const chunk = batchPromises.slice(i, i + chunkSize);
+      const chunkResults = await Promise.allSettled(chunk);
+      
+      for (const result of chunkResults) {
+        if (result.status === 'fulfilled') {
+          results.push(result.value);
+        } else {
+          results.push(null);
+        }
+      }
+      
+      if (i + chunkSize < batchPromises.length) {
+        await this.delay(this.config.batchDelay);
+      }
     }
-    return null;
+    
+    return results;
   }
 
   // ================================================================
@@ -351,29 +468,40 @@ class TokenDiscovery {
     const enriched = new Map();
     const tokenList = Array.from(tokensMap.values());
     
-    // Batch fetch metadata
+    this.log('debug', `Fetching metadata for ${tokenList.length} tokens`);
+    
     const batchSize = 10;
     for (let i = 0; i < tokenList.length; i += batchSize) {
       await this.processQueue();
       
       const batch = tokenList.slice(i, i + batchSize);
-      
-      for (const token of batch) {
+      const batchPromises = batch.map(async (token) => {
         try {
           const metadata = await this.fetchTokenMetadata(token.address, provider);
-          enriched.set(token.address, {
-            ...token,
-            symbol: metadata.symbol || token.symbol,
-            name: metadata.name || token.name,
-            decimals: metadata.decimals || token.decimals
-          });
+          return { address: token.address, metadata };
         } catch (error) {
-          enriched.set(token.address, token);
+          return { address: token.address, metadata: null };
         }
-        
-        if (i + batchSize < tokenList.length) {
-          await this.delay(50);
+      });
+      
+      const results = await Promise.all(batchPromises);
+      
+      for (const { address, metadata } of results) {
+        const original = tokensMap.get(address);
+        if (metadata) {
+          enriched.set(address, {
+            ...original,
+            symbol: metadata.symbol || original.symbol,
+            name: metadata.name || original.name,
+            decimals: metadata.decimals || original.decimals
+          });
+        } else {
+          enriched.set(address, original);
         }
+      }
+      
+      if (i + batchSize < tokenList.length) {
+        await this.delay(50);
       }
     }
     
@@ -391,28 +519,37 @@ class TokenDiscovery {
     try {
       const contract = new ethers.Contract(
         tokenAddress,
-        ['function symbol() view returns (string)', 'function name() view returns (string)', 'function decimals() view returns (uint8)'],
+        [
+          'function symbol() view returns (string)',
+          'function name() view returns (string)',
+          'function decimals() view returns (uint8)',
+          'function totalSupply() view returns (uint256)'
+        ],
         provider
       );
       
-      const [symbol, name, decimals] = await Promise.allSettled([
+      const [symbol, name, decimals, totalSupply] = await Promise.allSettled([
         contract.symbol(),
         contract.name(),
-        contract.decimals()
+        contract.decimals(),
+        contract.totalSupply()
       ]);
       
       const metadata = {
         symbol: symbol.status === 'fulfilled' ? symbol.value : '???',
         name: name.status === 'fulfilled' ? name.value : 'Unknown Token',
-        decimals: decimals.status === 'fulfilled' ? Number(decimals.value) : 18
+        decimals: decimals.status === 'fulfilled' ? Number(decimals.value) : 18,
+        totalSupply: totalSupply.status === 'fulfilled' ? totalSupply.value : null
       };
       
-      this.setCached(cacheKey, metadata, 30 * 60 * 1000); // 30 minutes
+      // Cache metadata for 30 minutes
+      this.setCached(cacheKey, metadata, 30 * 60 * 1000);
+      this.stats.rpcCalls++;
       return metadata;
       
     } catch (error) {
-      this.log('warn', `Failed to fetch metadata for ${tokenAddress}:`, error);
-      return { symbol: '???', name: 'Unknown Token', decimals: 18 };
+      this.log('warn', `Metadata fetch failed for ${tokenAddress}:`, error.message);
+      return null;
     }
   }
 
@@ -422,15 +559,22 @@ class TokenDiscovery {
   
   filterTokens(tokensMap) {
     const filtered = new Map();
+    let hiddenCount = 0;
     
     for (const [addr, token] of tokensMap) {
       // Exclude native tokens
-      if (this.isExcludedToken(addr)) continue;
-      
-      // Skip tokens with no meaningful info unless they have balance
-      if (token.balance > 0n) {
-        filtered.set(addr, token);
+      if (this.isExcludedToken(addr)) {
+        hiddenCount++;
+        continue;
       }
+      
+      // Keep all tokens with balance
+      // Additional filtering could be added (e.g., scam detection)
+      filtered.set(addr, token);
+    }
+    
+    if (hiddenCount > 0) {
+      this.log('debug', `Filtered out ${hiddenCount} excluded tokens`);
     }
     
     return filtered;
@@ -439,11 +583,17 @@ class TokenDiscovery {
   sortTokens(tokensMap) {
     const sorted = new Map();
     const sortedEntries = Array.from(tokensMap.entries()).sort((a, b) => {
-      // Sort by balance (desc)
-      const balanceDiff = (b[1].balance > 0n ? 1 : 0) - (a[1].balance > 0n ? 1 : 0);
-      if (balanceDiff !== 0) return balanceDiff;
+      // Primary: balance > 0 first
+      const aHasBalance = a[1].balance > 0n ? 1 : 0;
+      const bHasBalance = b[1].balance > 0n ? 1 : 0;
+      if (aHasBalance !== bHasBalance) return bHasBalance - aHasBalance;
       
-      // Then by symbol
+      // Secondary: balance amount (desc)
+      if (a[1].balance !== b[1].balance) {
+        return b[1].balance > a[1].balance ? 1 : -1;
+      }
+      
+      // Tertiary: symbol name
       return a[1].symbol.localeCompare(b[1].symbol);
     });
     
@@ -460,7 +610,8 @@ class TokenDiscovery {
   
   getCached(key) {
     const entry = this.cache.get(key);
-    if (entry && Date.now() - entry.timestamp < this.cacheTTL) {
+    if (entry && Date.now() - entry.timestamp < entry.ttl) {
+      this.stats.cacheHits++;
       return entry.value;
     }
     if (entry) this.cache.delete(key);
@@ -487,12 +638,22 @@ class TokenDiscovery {
     if (statusEl) statusEl.textContent = message;
     if (progressBar) progressBar.style.width = `${progress}%`;
     
-    console.log(`[TokenDiscovery] ${progress}% - ${message}`);
+    // Only log at specific milestones to avoid spam
+    if (progress === 0 || progress === 100 || progress === 50 || progress === 90) {
+      console.log(`[TokenDiscovery] ${progress}% - ${message}`);
+    }
   }
 
   log(level, ...args) {
     const prefix = `[TokenDiscovery:${level.toUpperCase()}]`;
-    console[level](prefix, ...args);
+    if (level === 'error' || level === 'warn') {
+      console[level](prefix, ...args);
+    } else if (level === 'info' || level === 'debug') {
+      // Only log debug in development
+      if (window.DEBUG_TOKEN_DISCOVERY) {
+        console[level](prefix, ...args);
+      }
+    }
   }
 
   isValidAddress(addr) {
@@ -500,12 +661,13 @@ class TokenDiscovery {
   }
 
   isExcludedToken(addr) {
+    const lower = addr.toLowerCase();
     const excluded = [
       CONFIG?.CONTRACTS?.PRGX_TOKEN?.toLowerCase(),
       CONFIG?.CONTRACTS?.WPLS?.toLowerCase(),
-      '0x0000000000000000000000000000000000000000'
+      '0x0000000000000000000000000000000000000000' // Native token
     ].filter(x => x);
-    return excluded.includes(addr.toLowerCase());
+    return excluded.includes(lower);
   }
 
   padAddress(addr) {
@@ -521,15 +683,26 @@ class TokenDiscovery {
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
         await this.processQueue();
+        this.stats.rpcCalls++;
         return await fn();
       } catch (error) {
         lastError = error;
+        this.consecutiveErrors++;
+        
         if (this.isRateLimitError(error)) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt) * 2 + Math.random() * 1000;
-          this.log('warn', `Rate limited, retrying in ${Math.round(delay)}ms`);
+          const delay = this.config.retryDelay * Math.pow(2, attempt) * 3 + Math.random() * 2000;
+          this.log('warn', `Rate limited (attempt ${attempt+1}/${this.config.maxRetries}), retrying in ${Math.round(delay)}ms`);
           await this.delay(delay);
+        } else if (this.isNonRetryable(error)) {
+          this.log('warn', `Non-retryable error: ${error.message}`);
+          this.consecutiveErrors = 0;
+          throw error;
         } else if (attempt < this.config.maxRetries - 1) {
-          await this.delay(this.config.retryDelay * Math.pow(2, attempt) + Math.random() * 500);
+          const delay = this.config.retryDelay * Math.pow(2, attempt) + Math.random() * 500;
+          this.log('debug', `Retry ${attempt+1}/${this.config.maxRetries} after ${Math.round(delay)}ms`);
+          await this.delay(delay);
+        } else {
+          this.consecutiveErrors = 0;
         }
       }
     }
@@ -538,7 +711,23 @@ class TokenDiscovery {
 
   isRateLimitError(error) {
     const msg = (error.message || '').toLowerCase();
-    return msg.includes('rate limit') || msg.includes('too many requests') || msg.includes('429') || msg.includes('too many errors');
+    return msg.includes('rate limit') || 
+           msg.includes('too many requests') || 
+           msg.includes('429') || 
+           msg.includes('too many errors') ||
+           msg.includes('exceeded');
+  }
+
+  isNonRetryable(error) {
+    const nonRetryable = [
+      'invalid argument',
+      'contract not found',
+      'missing revert data',
+      'invalid address',
+      'insufficient funds'
+    ];
+    const msg = (error.message || '').toLowerCase();
+    return nonRetryable.some(err => msg.includes(err));
   }
 
   delay(ms) {
@@ -588,39 +777,55 @@ class TokenDiscovery {
   
   renderTokenTable(tokens) {
     const tokenTableBody = document.getElementById('tokenTableBody');
-    if (!tokenTableBody) return;
+    if (!tokenTableBody) {
+      console.error('Token table body not found');
+      return;
+    }
     
     tokenTableBody.innerHTML = '';
     
+    // Convert Map to array and sort
     const sortedTokens = Array.from(tokens.values()).sort((a, b) => {
+      // Tokens with balance first
       if (b.balance > 0n && a.balance === 0n) return 1;
       if (a.balance > 0n && b.balance === 0n) return -1;
-      return parseFloat(b.estimatedUSD || 0) - parseFloat(a.estimatedUSD || 0);
+      // Then by balance value
+      if (b.balance !== a.balance) return b.balance > a.balance ? 1 : -1;
+      // Then by symbol
+      return a.symbol.localeCompare(b.symbol);
     });
     
     if (sortedTokens.length === 0) {
       const row = document.createElement('tr');
-      row.innerHTML = `<td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-3);">No tokens found in your wallet</td>`;
+      row.innerHTML = `<td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-3);">
+        <div>No tokens discovered</div>
+        <div style="font-size: 0.9rem; margin-top: 0.5rem;">Try refreshing or check your wallet connection</div>
+      </td>`;
       tokenTableBody.appendChild(row);
       return;
     }
     
     for (const token of sortedTokens) {
       const row = document.createElement('tr');
+      const balanceFormatted = parseFloat(ethers.formatUnits(token.balance, token.decimals || 18));
+      const usdValue = this.estimateUSD(token);
+      const prgxValue = this.estimatePRGX(token);
+      
       row.innerHTML = `
         <td><input type="checkbox" class="token-checkbox" data-token="${token.address}" ${token.balance > 0n ? '' : 'disabled'}></td>
         <td>
           <div style="display: flex; align-items: center; gap: 8px;">
-            <div class="token-icon" style="width: 24px; height: 24px; border-radius: 50%; background: var(--bg-card); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">${token.symbol.slice(0, 2)}</div>
+            <div class="token-icon" style="width: 28px; height: 28px; border-radius: 50%; background: var(--bg-card); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; border: 1px solid var(--border);">${(token.symbol || '?').slice(0, 2).toUpperCase()}</div>
             <div>
-              <div style="font-weight: 500;">${token.symbol}</div>
-              <div style="font-size: 0.8rem; color: var(--text-3);">${token.name}</div>
+              <div style="font-weight: 500;">${token.symbol || '???'}</div>
+              <div style="font-size: 0.8rem; color: var(--text-3);">${token.name || 'Unknown Token'}</div>
             </div>
           </div>
         </td>
-        <td class="mono">${parseFloat(ethers.formatUnits(token.balance, token.decimals)).toFixed(4)}</td>
-        <td>$${this.estimateUSD(token).toFixed(6)}</td>
-        <td>${this.estimatePRGX(token).toFixed(2)} PRGX</td>
+        <td class="mono" style="font-family: monospace;">${balanceFormatted.toFixed(4)}</td>
+        <td class="mono">$${usdValue.toFixed(6)}</td>
+        <td class="mono">${prgxValue.toFixed(2)}</td>
+        <td style="font-size: 0.8rem; color: var(--text-3); font-family: monospace;">${token.address.slice(0, 8)}...${token.address.slice(-6)}</td>
       `;
       tokenTableBody.appendChild(row);
     }
@@ -646,9 +851,38 @@ class TokenDiscovery {
   updateSweepButton() {
     const selected = document.querySelectorAll('.token-checkbox:checked').length;
     const sweepBtn = document.getElementById('sweepBtn');
+    const sweepSummary = document.getElementById('sweepSummary');
+    
     if (sweepBtn) {
       sweepBtn.disabled = selected === 0;
-      sweepBtn.textContent = selected > 0 ? `🧹 Sweep ${selected} Tokens` : '🧹 Select Tokens to Sweep';
+      sweepBtn.textContent = selected > 0 ? `🧹 Sweep ${selected} Token${selected > 1 ? 's' : ''}` : '🧹 Select Tokens to Sweep';
+    }
+    
+    if (sweepSummary) {
+      const selectedCheckboxes = document.querySelectorAll('.token-checkbox:checked');
+      let totalUSD = 0;
+      let totalPRGX = 0;
+      
+      selectedCheckboxes.forEach(cb => {
+        const token = this.discoveredTokens.get(cb.dataset.token);
+        if (token) {
+          totalUSD += this.estimateUSD(token);
+          totalPRGX += this.estimatePRGX(token);
+        }
+      });
+      
+      sweepSummary.innerHTML = `
+        <div style="display: flex; gap: 1.5rem; justify-content: center; margin-top: 1rem;">
+          <div>
+            <span style="color: var(--text-3);">Estimated Value:</span>
+            <span style="font-weight: 600; margin-left: 0.5rem;">$${totalUSD.toFixed(6)}</span>
+          </div>
+          <div>
+            <span style="color: var(--text-3);">PRGX Rewards:</span>
+            <span style="font-weight: 600; margin-left: 0.5rem;">${totalPRGX.toFixed(2)} PRGX</span>
+          </div>
+        </div>
+      `;
     }
   }
 
@@ -670,23 +904,34 @@ class TokenDiscovery {
   }
 
   refreshTokens() {
-    if (!window.wallet?.isConnected) return;
+    if (!window.wallet?.isConnected) {
+      window.wallet?.showToast?.('Please connect your wallet first', 'error');
+      return;
+    }
     const address = window.wallet.address;
     if (address) {
       this.clearCache();
       this.discoverTokens(address).then(() => {
         this.renderTokenTable(this.discoveredTokens);
+        window.wallet?.showToast?.('Token list refreshed', 'success');
       }).catch(err => {
         console.error('Refresh failed:', err);
-        window.wallet?.showToast?.('Failed to refresh tokens', 'error');
+        window.wallet?.showToast?.(`Refresh failed: ${err.message}`, 'error');
       });
     }
   }
 
+  // ================================================================
+  // VALUE ESTIMATION
+  // ================================================================
+  
   estimateUSD(token) {
-    const balance = parseFloat(ethers.formatUnits(token.balance, token.decimals));
+    const balance = parseFloat(ethers.formatUnits(token.balance, token.decimals || 18));
     if (balance === 0) return 0;
-    // Very conservative: $0.0001 per token for unknown tokens
+    
+    // Try to get price from token metadata if available
+    // For now, use conservative placeholder
+    // TODO: Integrate with price oracle
     return balance * 0.0001;
   }
 
