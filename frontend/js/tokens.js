@@ -772,7 +772,6 @@ class TokenDiscovery {
   set activeRequests(value) {
     this._activeRequests = value;
   }
-}
 
   // ================================================================
   // UTILITY METHODS
@@ -1153,7 +1152,7 @@ class TokenDiscovery {
       }
       
       // Fetch balance and metadata
-      const balances = await this.batchFetchBalances([normalized], window.wallet.address);
+      const balances = await this.batchGetBalances([normalized], window.wallet.address);
       const balance = balances[normalized] || 0n;
       
       if (balance <= 0n) {
