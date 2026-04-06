@@ -249,16 +249,6 @@ class TokenDiscovery {
     return /^0x[a-fA-F0-9]{40}$/.test(addr);
   }
 
-  isExcludedToken(addr) {
-    if (!addr) return false;
-    const lower = addr.toLowerCase();
-    // Only exclude the native token (PLS) - keep all ERC-20s including PRGX and WPLS
-    const excluded = [
-      '0x0000000000000000000000000000000000000000' // Native token (PLS)
-    ];
-    return excluded.includes(lower);
-  }
-  
   async phase2ScanTransfers(address, provider) {
     const tokens = new Map();
     
@@ -448,31 +438,31 @@ class TokenDiscovery {
       
       const chunkPromises = chunk.map(async (tokenAddr) => {
         try {
+          // ERC20 balanceOf signature: 0x70a08231 + padded address
           const callData = '0x70a08231' + this.padAddress(userAddr);
           
-          // Show the call being made
-          if (window.DEBUG_TOKEN_DISCOVERY) {
-            console.log(`[TokenDiscovery] Calling balanceOf on ${tokenAddr}`);
-          }
-          
-          const balance = await this.retryable(() => provider.getBalance({
+          // Use provider.call() for eth_call (not getBalance which is for native)
+          const balance = await this.retryable(() => provider.call({
             to: tokenAddr,
             data: callData
           }), provider);
           
           this.stats.rpcCalls++;
           
-          if (balance && balance > this.config.dustThreshold) {
-            console.log(`[TokenDiscovery] ✓ ${tokenAddr}: ${balance.toString()}`);
+          // balance is returned as hex string
+          const balanceBigInt = BigInt(balance);
+          
+          if (balanceBigInt > this.config.dustThreshold) {
+            console.log(`[TokenDiscovery] ✓ ${tokenAddr}: ${balanceBigInt.toString()}`);
             return {
               address: tokenAddr,
-              balance: balance,
+              balance: balanceBigInt,
               symbol: '???',
               name: 'Unknown Token',
               decimals: 18
             };
-          } else if (balance) {
-            console.log(`[TokenDiscovery] - ${tokenAddr}: ${balance.toString()} (below threshold)`);
+          } else if (balanceBigInt > 0n) {
+            console.log(`[TokenDiscovery] - ${tokenAddr}: ${balanceBigInt.toString()} (below threshold)`);
           }
         } catch (error) {
           console.error(`[TokenDiscovery] ✗ ${tokenAddr}: ${error.message}`);
@@ -696,13 +686,8 @@ class TokenDiscovery {
   }
 
   isExcludedToken(addr) {
-    const lower = addr.toLowerCase();
-    const excluded = [
-      CONFIG?.CONTRACTS?.PRGX_TOKEN?.toLowerCase(),
-      CONFIG?.CONTRACTS?.WPLS?.toLowerCase(),
-      '0x0000000000000000000000000000000000000000' // Native token
-    ].filter(x => x);
-    return excluded.includes(lower);
+    // No exclusions - discover all ERC-20 tokens
+    return false;
   }
 
   padAddress(addr) {
