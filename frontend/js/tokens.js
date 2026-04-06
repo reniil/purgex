@@ -220,7 +220,11 @@ class TokenDiscovery {
     const tokens = new Map();
     const knownTokens = this.getPulseChainTokenList();
     
-    this.log('debug', `Checking ${knownTokens.length} known tokens`);
+    this.log('debug', `Phase 1: Checking ${knownTokens.length} known tokens:`, knownTokens);
+    
+    if (knownTokens.length === 0) {
+      this.log('warn', 'No known tokens configured - check CONFIG.CONTRACTS.PRGX_TOKEN and WPLS');
+    }
     
     // Batch check balances
     return await this.batchCheckTokens(knownTokens, address, provider);
@@ -229,22 +233,37 @@ class TokenDiscovery {
   getPulseChainTokenList() {
     // Common tokens on PulseChain - expand this list
     const tokens = [
-      // PurgeX token
+      // PurgeX token (from config)
       CONFIG?.CONTRACTS?.PRGX_TOKEN,
-      // Wrapped PLS
+      // Wrapped PLS (from config)
       CONFIG?.CONTRACTS?.WPLS,
-      // Major DeFi tokens (add as they are known)
-      // '0x...USDC on PulseChain',
-      // '0x...USDT on PulseChain',
+      // Known PulseChain tokens (add real addresses)
+      // USDC, USDT, DAI equivalents when available
     ].filter(addr => addr && this.isValidAddress(addr));
     
     // Deduplicate and limit
     return [...new Set(tokens.map(a => a.toLowerCase()))].slice(0, this.config.knownTokenLimit);
   }
 
-  // ================================================================
-  // PHASE 2: Transfer Event Scan
-  // ================================================================
+  isValidAddress(addr) {
+    return /^0x[a-fA-F0-9]{40}$/.test(addr);
+  }
+
+  isExcludedToken(addr) {
+    if (!addr) return false;
+    const lower = addr.toLowerCase();
+    // Safely get config values with defaults
+    const prgx = CONFIG?.CONTRACTS?.PRGX_TOKEN ? CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase() : null;
+    const wpls = CONFIG?.CONTRACTS?.WPLS ? CONFIG.CONTRACTS.WPLS.toLowerCase() : null;
+    
+    const excluded = [
+      prgx,
+      wpls,
+      '0x0000000000000000000000000000000000000000' // Native token
+    ].filter(x => x);
+    
+    return excluded.includes(lower);
+  }
   
   async phase2ScanTransfers(address, provider) {
     const tokens = new Map();
@@ -360,7 +379,7 @@ class TokenDiscovery {
     let batchIndex = 0;
     
     while (batchIndex < addresses.length) {
-      await this.processQueue();
+      await this.processRequestQueue();
       
       const batch = addresses.slice(batchIndex, batchIndex + batchSize);
       
@@ -682,7 +701,7 @@ class TokenDiscovery {
     let lastError;
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
-        await this.processQueue();
+        await this.processRequestQueue();
         this.stats.rpcCalls++;
         return await fn();
       } catch (error) {
