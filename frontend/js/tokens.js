@@ -364,18 +364,23 @@ class TokenDiscovery {
       .filter(addr => this.isValidAddress(addr))
       .filter(addr => !this.isExcludedToken(addr));
     
-    if (addresses.length === 0) return tokens;
+    if (addresses.length === 0) {
+      console.warn('[TokenDiscovery] batchCheckTokens: No valid addresses after filtering');
+      return tokens;
+    }
     
-    this.log('debug', `Batch checking ${addresses.length} tokens`);
+    console.log(`[TokenDiscovery] batchCheckTokens: ${addresses.length} tokens to check`);
     
     // Process in batches with delays
     let batchSize = this.config.batchSize;
     let batchIndex = 0;
+    let totalFound = 0;
     
     while (batchIndex < addresses.length) {
       await this.processRequestQueue();
       
       const batch = addresses.slice(batchIndex, batchIndex + batchSize);
+      console.log(`[TokenDiscovery] Processing batch ${Math.floor(batchIndex/batchSize)+1}: ${batch.length} tokens (indices ${batchIndex}-${batchIndex+batchSize-1})`);
       
       try {
         // Use multicall-like pattern: batch eth_call requests
@@ -386,28 +391,32 @@ class TokenDiscovery {
           if (result && result.balance > this.config.dustThreshold) {
             tokens.set(result.address, result);
             batchSuccessCount++;
+            totalFound++;
           }
         }
         
-        this.log('debug', `Batch ${Math.floor(batchIndex/batchSize)+1}: ${batchSuccessCount}/${batch.length} with balance`);
+        console.log(`[TokenDiscovery] Batch result: ${batchSuccessCount}/${batch.length} with balance (total found: ${totalFound})`);
         
         // Adaptive batch sizing
         if (batchSuccessCount > 0) {
           batchSize = Math.min(this.config.maxBatchSize, batchSize + 2);
+        } else {
+          // If no tokens found in batch, reduce size for next batch
+          batchSize = Math.max(5, Math.floor(batchSize * 0.8));
         }
         this.consecutiveErrors = 0;
         
       } catch (error) {
         this.consecutiveErrors++;
         this.stats.errors++;
-        this.log('warn', `Batch failed (size ${batchSize}): ${error.message}`);
+        console.error(`[TokenDiscovery] Batch ${Math.floor(batchIndex/batchSize)+1} failed:`, error.message);
         
         // Reduce batch size on failure
         batchSize = Math.max(5, Math.floor(batchSize * 0.6));
         
         // Circuit breaker
         if (this.consecutiveErrors >= this.config.circuitBreakerThreshold) {
-          this.log('warn', `Circuit breaker - pausing ${this.config.circuitBreakerPause}ms`);
+          console.warn(`[TokenDiscovery] Circuit breaker - pausing ${this.config.circuitBreakerPause}ms`);
           await this.delay(this.config.circuitBreakerPause);
           this.consecutiveErrors = 0;
         }
@@ -421,6 +430,7 @@ class TokenDiscovery {
       }
     }
     
+    console.log(`[TokenDiscovery] batchCheckTokens complete: ${tokens.size} tokens with balance>threshold`);
     return tokens;
   }
 
@@ -428,48 +438,60 @@ class TokenDiscovery {
     const results = [];
     const userAddr = userAddress.toLowerCase();
     
-    // Make parallel calls with limit
-    const batchPromises = tokenAddresses.map(async (tokenAddr) => {
-      try {
-        const balance = await this.retryable(() => provider.getBalance({
-          to: tokenAddr,
-          data: '0x70a08231' + this.padAddress(userAddr)
-        }), provider);
-        
-        if (balance && balance > this.config.dustThreshold) {
-          return {
-            address: tokenAddr,
-            balance: balance,
-            symbol: '???',
-            name: 'Unknown Token',
-            decimals: 18
-          };
-        }
-      } catch (error) {
-        // Individual token failures are silent
-      }
-      return null;
-    });
+    console.log(`[TokenDiscovery] batchBalanceCalls: ${tokenAddresses.length} tokens to check via eth_call`);
     
-    // Process in smaller chunks to avoid overwhelming
+    // Make parallel calls with limit
     const chunkSize = this.config.maxConcurrent;
-    for (let i = 0; i < batchPromises.length; i += chunkSize) {
-      const chunk = batchPromises.slice(i, i + chunkSize);
-      const chunkResults = await Promise.allSettled(chunk);
+    for (let i = 0; i < tokenAddresses.length; i += chunkSize) {
+      const chunk = tokenAddresses.slice(i, i + chunkSize);
+      console.log(`[TokenDiscovery] Balance chunk ${Math.floor(i/chunkSize)+1}: ${chunk.length} tokens`);
+      
+      const chunkPromises = chunk.map(async (tokenAddr) => {
+        try {
+          const callData = '0x70a08231' + this.padAddress(userAddr);
+          
+          // Show the call being made
+          if (window.DEBUG_TOKEN_DISCOVERY) {
+            console.log(`[TokenDiscovery] Calling balanceOf on ${tokenAddr}`);
+          }
+          
+          const balance = await this.retryable(() => provider.getBalance({
+            to: tokenAddr,
+            data: callData
+          }), provider);
+          
+          this.stats.rpcCalls++;
+          
+          if (balance && balance > this.config.dustThreshold) {
+            console.log(`[TokenDiscovery] ✓ ${tokenAddr}: ${balance.toString()}`);
+            return {
+              address: tokenAddr,
+              balance: balance,
+              symbol: '???',
+              name: 'Unknown Token',
+              decimals: 18
+            };
+          } else if (balance) {
+            console.log(`[TokenDiscovery] - ${tokenAddr}: ${balance.toString()} (below threshold)`);
+          }
+        } catch (error) {
+          console.error(`[TokenDiscovery] ✗ ${tokenAddr}: ${error.message}`);
+        }
+        return null;
+      });
+      
+      const chunkResults = await Promise.all(chunkPromises);
       
       for (const result of chunkResults) {
-        if (result.status === 'fulfilled') {
-          results.push(result.value);
-        } else {
-          results.push(null);
-        }
+        if (result) results.push(result);
       }
       
-      if (i + chunkSize < batchPromises.length) {
+      if (i + chunkSize < tokenAddresses.length) {
         await this.delay(this.config.batchDelay);
       }
     }
     
+    console.log(`[TokenDiscovery] batchBalanceCalls complete: ${results.length} tokens with balance>0`);
     return results;
   }
 
