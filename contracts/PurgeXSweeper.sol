@@ -51,6 +51,11 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     // Dust sweep bonus configuration
     uint256 public constant BONUS_PER_TOKEN = 100 * 1e18; // 100 PRGX per token swept
     address public bonusWallet; // Where bonus PRGX is transferred from
+    
+    // Fee distribution percentages
+    uint256 public constant FEE_BURN_PERCENT = 50; // 50% burned
+    uint256 public constant FEE_TREASURY_PERCENT = 30; // 30% to treasury
+    // Staking portion = remaining (20%)
 
     // ========== EVENTS ==========
     event Sweep(
