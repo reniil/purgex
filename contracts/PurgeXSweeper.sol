@@ -50,12 +50,7 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     
     // Dust sweep bonus configuration
     uint256 public constant BONUS_PER_TOKEN = 100 * 1e18; // 100 PRGX per token swept
-    address public bonusWallet; // Where bonus PRGX is minted from
-    
-    // Fee distribution
-    uint256 public constant FEE_BURN_PERCENT = 50; // 50% burned
-    uint256 public constant FEE_TREASURY_PERCENT = 30; // 30% to treasury
-    uint256 public constant FEE_STAKING_PERCENT = 20; // 20% to staking rewards
+    address public bonusWallet; // Where bonus PRGX is transferred from
 
     // ========== EVENTS ==========
     event Sweep(
@@ -125,19 +120,19 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
      */
     function _sweepToken(address user, address token, uint256 minOut) internal {
         // Get balances
-        uint256 balance = IERC20(token).balanceOf(user);
-        uint256 allowance = IERC20(token).allowance(user, address(this));
+        uint256 bal = IERC20(token).balanceOf(user);
+        uint256 allow = IERC20(token).allowance(user, address(this));
         
-        require(balance > 0, "No balance");
-        require(allowance > 0, "No allowance");
+        require(bal > 0, "No balance");
+        require(allow > 0, "No allowance");
 
         // Calculate sweep amount
-        uint256 sweepAmount = balance < allowance ? balance : allowance;
+        uint256 sweepAmt = bal < allow ? bal : allow;
 
         // Calculate fee
-        uint256 fee = (sweepAmount * protocolFeeBps) / 10000;
-        require(sweepAmount > fee, "Amount too small");
-        uint256 netAmount = sweepAmount - fee;
+        uint256 fee = (sweepAmt * protocolFeeBps) / 10000;
+        require(sweepAmt > fee, "Amount too small");
+        uint256 netAmt = sweepAmt - fee;
 
         // Transfer fee to recipient
         if (fee > 0) {
@@ -146,34 +141,34 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
         }
 
         // Transfer net to sweeper
-        IERC20(token).safeTransferFrom(user, address(this), netAmount);
+        IERC20(token).safeTransferFrom(user, address(this), netAmt);
 
         // Approve router
-        IERC20(token).approve(pulseXRouter, netAmount);
+        IERC20(token).approve(pulseXRouter, netAmt);
 
-        // Build swap path
+        // Build swap path and determine recipient
         address[] memory path = getSwapPath(token);
+        address recipient = tokenDestinations[user];
+        if (recipient == address(0)) recipient = user;
 
         // Execute swap
         uint256[] memory amounts = IPulseXRouter(pulseXRouter).swapExactTokensForTokens(
-            netAmount,
+            netAmt,
             minOut,
             path,
-            tokenDestinations[user] == address(0) ? user : tokenDestinations[user],
-            block.timestamp + 3600 // 1 hour deadline
+            recipient,
+            block.timestamp + 3600
         );
 
         uint256 prgxOut = amounts[amounts.length - 1];
         
-        // Distribute fees according to the new model
+        // Distribute fees and mint bonus
         if (fee > 0) {
             _distributeFees(token, fee);
         }
+        _mintBonus(user, 1);
         
-        // Mint bonus to user (100 PRGX per token swept)
-        _mintBonus(user, 1); // 1 token count per sweep call
-        
-        emit Sweep(user, token, sweepAmount, prgxOut, tokenDestinations[user] == address(0) ? user : tokenDestinations[user]);
+        emit Sweep(user, token, sweepAmt, prgxOut, recipient);
     }
     
     /**
