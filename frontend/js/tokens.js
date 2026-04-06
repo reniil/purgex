@@ -43,6 +43,31 @@ class TokenDiscovery {
   }
 
   // ================================================================
+  // UTILITY METHODS (must be defined before use)
+  // ================================================================
+  
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  log(level, ...args) {
+    const prefix = `[TokenDiscovery:${level.toUpperCase()}]`;
+    if (level === 'error' || level === 'warn') {
+      console[level](prefix, ...args);
+    } else if (level === 'info' || level === 'debug') {
+      if (window.DEBUG_TOKEN_DISCOVERY) {
+        console[level](prefix, ...args);
+      }
+    }
+  }
+
+  logError(context, error) {
+    this.stats.errors++;
+    this.discoveryErrors.push({ phase: context, error, message: error.message, stack: error.stack });
+    console.error(`[TokenDiscovery] ${context}:`, error.message);
+  }
+
+  // ================================================================
   // PUBLIC API
   // ================================================================
   
@@ -186,6 +211,7 @@ class TokenDiscovery {
       const balanceArray = Array.isArray(data) ? data : data.balances || data.token_balances || data;
       
       console.log(`[TokenDiscovery] Blockscout API returned ${balanceArray.length} token entries`);
+      console.log(`[TokenDiscovery] Blockscout raw data:`, data);
       
       for (const item of balanceArray) {
         try {
@@ -206,6 +232,7 @@ class TokenDiscovery {
             balanceStr = item.value;
           } else {
             // Unknown format, skip
+            console.log('[TokenDiscovery] Skipping item with unknown format:', item);
             continue;
           }
           
@@ -214,7 +241,12 @@ class TokenDiscovery {
           const tokenAddress = tokenInfo.address_hash.toLowerCase();
           const balance = BigInt(balanceStr || '0');
           
-          if (balance <= this.config.dustThreshold) continue;
+          console.log(`[TokenDiscovery] Token: ${tokenAddress}, balance: ${balance}, decimals: ${tokenInfo.decimals}`);
+          
+          if (balance <= this.config.dustThreshold) {
+            console.log(`[TokenDiscovery] Token ${tokenAddress} skipped: balance below threshold`);
+            continue;
+          }
           
           // Get decimals
           let decimals = 18;
@@ -231,6 +263,8 @@ class TokenDiscovery {
             name: tokenInfo.name || 'Unknown Token',
             decimals: decimals
           });
+          
+          console.log(`[TokenDiscovery] Added token: ${tokenInfo.symbol} (${tokenAddress})`);
           
         } catch (e) {
           // Skip individual token errors
@@ -437,6 +471,28 @@ class TokenDiscovery {
     console.error(`[TokenDiscovery] ${context}:`, error.message);
   }
 
+  isValidAddress(addr) {
+    return /^0x[a-fA-F0-9]{40}$/.test(addr);
+  }
+
+  isExcludedToken(addr) {
+    return false;
+  }
+
+  padAddress(addr) {
+    const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
+    return padded.startsWith('0x') ? padded.slice(2) : padded;
+  }
+
+  padTopic(addr) {
+    const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
+    return padded.startsWith('0x') ? padded : '0x' + padded;
+  }
+
+  toHex(num) {
+    return '0x' + num.toString(16);
+  }
+
   async processRequestQueue() {
     const maxConcurrent = this.config.maxConcurrent;
     
@@ -474,28 +530,6 @@ class TokenDiscovery {
   // HELPERS
   // ================================================================
   
-  isValidAddress(addr) {
-    return /^0x[a-fA-F0-9]{40}$/.test(addr);
-  }
-
-  isExcludedToken(addr) {
-    return false;
-  }
-
-  padAddress(addr) {
-    const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
-    return padded.startsWith('0x') ? padded.slice(2) : padded;
-  }
-
-  padTopic(addr) {
-    const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
-    return padded.startsWith('0x') ? padded : '0x' + padded;
-  }
-
-  toHex(num) {
-    return '0x' + num.toString(16);
-  }
-
   async retryable(fn, context) {
     let lastError;
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
