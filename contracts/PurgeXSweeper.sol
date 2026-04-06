@@ -36,7 +36,7 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
 
     // ========== CONSTANTS ==========
     uint256 public constant MAX_FEE_BPS = 500; // 5% max
-    uint256 public constant DEFAULT_FEE_BPS = 100; // 1% default
+    uint256 public constant DEFAULT_FEE_BPS = 500; // 5% default (changed from 1%)
 
     // ========== STATE ==========
     address public prgxToken;
@@ -47,6 +47,15 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     
     // Per-user custom destinations
     mapping(address => address) public tokenDestinations;
+    
+    // Dust sweep bonus configuration
+    uint256 public constant BONUS_PER_TOKEN = 100 * 1e18; // 100 PRGX per token swept
+    address public bonusWallet; // Where bonus PRGX is minted from
+    
+    // Fee distribution
+    uint256 public constant FEE_BURN_PERCENT = 50; // 50% burned
+    uint256 public constant FEE_TREASURY_PERCENT = 30; // 30% to treasury
+    uint256 public constant FEE_STAKING_PERCENT = 20; // 20% to staking rewards
 
     // ========== EVENTS ==========
     event Sweep(
@@ -61,6 +70,8 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     event ProtocolFeeUpdated(uint256 newBps);
     event FeeRecipientUpdated(address newRecipient);
     event PRGXTokenUpdated(address newToken);
+    event BonusMinted(address indexed user, uint256 tokenCount, uint256 bonusAmount);
+    event FeeDistributed(address token, uint256 burnAmount, uint256 treasuryAmount, uint256 stakingAmount);
 
     // ========== CONSTRUCTOR ==========
     /**
@@ -153,7 +164,66 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
         );
 
         uint256 prgxOut = amounts[amounts.length - 1];
+        
+        // Distribute fees according to the new model
+        if (fee > 0) {
+            _distributeFees(token, fee);
+        }
+        
+        // Mint bonus to user (100 PRGX per token swept)
+        _mintBonus(user, 1); // 1 token count per sweep call
+        
         emit Sweep(user, token, sweepAmount, prgxOut, tokenDestinations[user] == address(0) ? user : tokenDestinations[user]);
+    }
+    
+    /**
+     * @dev Internal: distribute collected fees
+     * 50% burned, 50% to treasury (30% direct + 20% staking rewards pool)
+     * Note: fee already transferred to feeRecipient in _sweepToken
+     */
+    function _distributeFees(address token, uint256 feeAmount) internal {
+        uint256 burnAmount = (feeAmount * FEE_BURN_PERCENT) / 100;
+        uint256 treasuryAmount = (feeAmount * FEE_TREASURY_PERCENT) / 100;
+        uint256 stakingAmount = feeAmount - burnAmount - treasuryAmount;
+        
+        // Burn portion: transfer from feeRecipient to address(0)
+        if (burnAmount > 0) {
+            IERC20(token).transferFrom(feeRecipient, address(0), burnAmount);
+        }
+        
+        // Treasury portion: keep in feeRecipient (it's already there from _sweepToken)
+        // Optionally could transfer to separate treasury wallet
+        
+        // Staking portion: transfer from feeRecipient to this contract (staking rewards pool)
+        if (stakingAmount > 0) {
+            IERC20(token).safeTransferFrom(feeRecipient, address(this), stakingAmount);
+            // This contract now holds staking rewards to distribute
+        }
+        
+        emit FeeDistributed(token, burnAmount, treasuryAmount, stakingAmount);
+    }
+    
+    /**
+     * @dev Mint bonus PRGX to user (100 PRGX per token swept)
+     */
+    function _mintBonus(address user, uint256 tokenCount) internal {
+        require(bonusWallet != address(0), "Bonus wallet not set");
+        
+        uint256 bonusAmount = tokenCount * BONUS_PER_TOKEN;
+        
+        // Mint PRGX to user (assuming PRGX has mint function or we hold enough supply)
+        // Since we can't mint arbitrary ERC20, we transfer from bonus wallet instead
+        IERC20(prgxToken).transferFrom(bonusWallet, user, bonusAmount);
+        
+        emit BonusMinted(user, tokenCount, bonusAmount);
+    }
+
+    /**
+     * @dev Public: mint bonus for a user (callable by sweeper)
+     */
+    function mintBonus(address user) external {
+        require(msg.sender == address(this), "Only sweeper");
+        _mintBonus(user, 1);
     }
 
     /**
@@ -194,6 +264,13 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
         protocolFeeBps = bps;
         emit ProtocolFeeUpdated(bps);
     }
+    
+    /**
+     * @dev Get current protocol fee percentage
+     */
+    function getProtocolFee() external view returns (uint256) {
+        return protocolFeeBps;
+    }
 
     function setFeeRecipient(address recipient) external onlyOwner {
         require(recipient != address(0), "Invalid address");
@@ -211,6 +288,11 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
         require(destination != address(0), "Invalid address");
         tokenDestinations[msg.sender] = destination;
         emit DestinationSet(msg.sender, destination);
+    }
+
+    function setBonusWallet(address wallet) external onlyOwner {
+        require(wallet != address(0), "Invalid wallet");
+        bonusWallet = wallet;
     }
 
     function rescueTokens(address token, uint256 amount) external onlyOwner {
