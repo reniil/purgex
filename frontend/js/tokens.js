@@ -260,11 +260,11 @@ class TokenDiscovery {
       
       // Get Transfer events TO the user (tokens received)
       const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-      const paddedAddress = this.padAddress(address);
+      const paddedAddressTopic = this.padTopic(address);
       
       const logsTo = await this.retryable(() => provider.getLogs({
         address: null,
-        topics: [transferTopic, null, paddedAddress],
+        topics: [transferTopic, null, paddedAddressTopic],
         fromBlock: this.toHex(fromBlock),
         toBlock: this.toHex(currentBlock)
       }), provider);
@@ -285,7 +285,7 @@ class TokenDiscovery {
         this.log('debug', 'Scanning FROM transfers for additional tokens...');
         const logsFrom = await this.retryable(() => provider.getLogs({
           address: null,
-          topics: [transferTopic, paddedAddress, null],
+          topics: [transferTopic, paddedAddressTopic, null],
           fromBlock: this.toHex(fromBlock),
           toBlock: this.toHex(currentBlock)
         }), provider);
@@ -693,8 +693,13 @@ class TokenDiscovery {
   padAddress(addr) {
     // Returns 32-byte hex string WITHOUT 0x prefix for calldata concatenation
     const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
-    // ethers returns hex with 0x prefix - strip it
     return padded.startsWith('0x') ? padded.slice(2) : padded;
+  }
+
+  padTopic(addr) {
+    // Returns 32-byte hex string WITH 0x prefix for topic filters
+    const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
+    return padded.startsWith('0x') ? padded : '0x' + padded;
   }
 
   toHex(num) {
