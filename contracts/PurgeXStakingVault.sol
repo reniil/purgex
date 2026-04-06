@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @title PurgeXStakingVault
  * @dev Staking vault for PRGX tokens with rewards distribution
  */
-contract PurgeXStakingVault is Ownable, ReentrancyGuard {
+contract PurgeXStakingVault is Ownable(msg.sender), ReentrancyGuard {
     using SafeERC20 for IERC20;
     
     // ========== EVENTS ==========
