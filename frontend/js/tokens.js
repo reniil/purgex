@@ -220,10 +220,10 @@ class TokenDiscovery {
     const tokens = new Map();
     const knownTokens = this.getPulseChainTokenList();
     
-    this.log('debug', `Phase 1: Checking ${knownTokens.length} known tokens:`, knownTokens);
+    console.log(`[TokenDiscovery:DEBUG] Phase 1: Known token list (${knownTokens.length}):`, knownTokens);
     
     if (knownTokens.length === 0) {
-      this.log('warn', 'No known tokens configured - check CONFIG.CONTRACTS.PRGX_TOKEN and WPLS');
+      console.warn('[TokenDiscovery] No known tokens configured - check CONFIG.CONTRACTS.PRGX_TOKEN and WPLS');
     }
     
     // Batch check balances
