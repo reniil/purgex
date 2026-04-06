@@ -20,25 +20,42 @@
     <!-- Price Widget -->
     <div class="card card-glow mb-8" style="text-align: center; padding: 2rem;">
       <h3 style="margin-bottom: 1.5rem;">PRGX Price Information</h3>
-      <div class="grid grid-3" style="gap: 2rem;">
-        <div>
-          <div class="label" style="margin-bottom: 0.5rem;">Current Price</div>
-          <div class="value prgx-price-display" id="currentPrice" style="font-size: 2rem;">$—</div>
-          <div class="sub" style="margin-top: 0.5rem;">USD per PRGX</div>
-        </div>
-        <div>
-          <div class="label" style="margin-bottom: 0.5rem;">Market Cap</div>
-          <div class="value" id="marketCap" style="font-size: 2rem;">$—</div>
-          <div class="sub" style="margin-top: 0.5rem;">Fully diluted</div>
-        </div>
-        <div>
-          <div class="label" style="margin-bottom: 0.5rem;">Liquidity</div>
-          <div class="value" id="liquidity" style="font-size: 2rem;">$—</div>
-          <div class="sub" style="margin-top: 0.5rem;">PulseX pool</div>
-        </div>
+      
+      <!-- Loading State -->
+      <div id="priceLoading" style="padding: 2rem;">
+        <div class="refresh-indicator" style="width: 40px; height: 40px; border-width: 4px; margin: 0 auto;"></div>
+        <p style="margin-top: 1rem; color: var(--text-3);">Fetching latest data...</p>
       </div>
-      <div class="price-timestamp" id="priceTimestamp" style="margin-top: 1rem; color: var(--text-3); font-size: 0.9rem;">
-        Updated just now
+      
+      <!-- Error State -->
+      <div id="priceError" style="display: none; padding: 2rem; color: var(--red);">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚠️</div>
+        <p>Unable to fetch live data</p>
+        <p style="font-size: 0.9rem; margin-top: 0.5rem;">Please check your connection or try again later.</p>
+      </div>
+      
+      <!-- Data Display -->
+      <div id="priceData" style="display: none;">
+        <div class="grid grid-3" style="gap: 2rem;">
+          <div>
+            <div class="label" style="margin-bottom: 0.5rem;">Current Price</div>
+            <div class="value prgx-price-display" id="currentPrice" style="font-size: 2rem;">$—</div>
+            <div class="sub" style="margin-top: 0.5rem;">USD per PRGX</div>
+          </div>
+          <div>
+            <div class="label" style="margin-bottom: 0.5rem;">Market Cap</div>
+            <div class="value" id="marketCap" style="font-size: 2rem;">$—</div>
+            <div class="sub" style="margin-top: 0.5rem;">Fully diluted</div>
+          </div>
+          <div>
+            <div class="label" style="margin-bottom: 0.5rem;">Liquidity</div>
+            <div class="value" id="liquidity" style="font-size: 2rem;">$—</div>
+            <div class="sub" style="margin-top: 0.5rem;">PulseX pool</div>
+          </div>
+        </div>
+        <div class="price-timestamp" id="priceTimestamp" style="margin-top: 1rem; color: var(--text-3); font-size: 0.9rem;">
+          Updated just now
+        </div>
       </div>
     </div>
 
@@ -246,12 +263,36 @@
 
 </div>
 
+
+</body>
+</html>
 <script>
   // Initialize tokenomics page
   async function initTokenomics() {
+    // Show loading state
+    showLoadingState();
     await updateTokenomics();
     // Refresh every 60 seconds
     setInterval(updateTokenomics, 60000);
+  }
+
+  function showLoadingState() {
+    document.getElementById('priceLoading').style.display = 'block';
+    document.getElementById('priceError').style.display = 'none';
+    document.getElementById('priceData').style.display = 'none';
+  }
+
+  function showErrorState(message) {
+    document.getElementById('priceLoading').style.display = 'none';
+    document.getElementById('priceError').style.display = 'block';
+    document.getElementById('priceData').style.display = 'none';
+    document.getElementById('priceError').querySelector('p:last-child').textContent = message || 'Please try again later.';
+  }
+
+  function showDataState() {
+    document.getElementById('priceLoading').style.display = 'none';
+    document.getElementById('priceError').style.display = 'none';
+    document.getElementById('priceData').style.display = 'block';
   }
 
   async function updateTokenomics() {
@@ -260,6 +301,7 @@
       
       if (!data.success) {
         console.error('Failed to fetch tokenomics:', data.error);
+        showErrorState('Failed to fetch data: ' + (data.error || 'Unknown error'));
         return;
       }
 
@@ -282,18 +324,29 @@
         formatNumber(data.burnedTokens);
       
       // Update timestamp
-      document.getElementById('priceTimestamp').innerHTML = 
-        'Updated just now';
+      updateTimestamp();
       
-      // Remove loading state
-      document.getElementById('tokenomicsPage').classList.remove('live-data-loading');
+      // Show data state
+      showDataState();
       
     } catch (error) {
       console.error('Tokenomics update error:', error);
+      showErrorState('Connection error. Please check your internet.');
     }
   }
 
-  // Helper functions (if not already in tokenomics.js)
+  function updateTimestamp() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+    document.getElementById('priceTimestamp').textContent = 
+      'Updated at ' + timeStr;
+  }
+
+  // Helper functions
   function formatNumber(num) {
     if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
     if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
@@ -309,6 +362,4 @@
     return '$' + num.toFixed(2);
   }
 </script>
-
-</body>
-</html>
+</script>
