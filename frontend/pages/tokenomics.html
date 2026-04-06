@@ -2,7 +2,10 @@
 // TOKENOMICS PAGE — Supply breakdown and charts
 // ================================================================ -->
 
-<div class="tokenomics-page">
+<script src="/js/config.js"></script>
+<script src="/js/tokenomics.js"></script>
+
+<div class="tokenomics-page" id="tokenomicsPage" onload="initTokenomics()">
 
   <div class="container">
     
@@ -20,7 +23,7 @@
       <div class="grid grid-3" style="gap: 2rem;">
         <div>
           <div class="label" style="margin-bottom: 0.5rem;">Current Price</div>
-          <div class="value prgx-price-display" style="font-size: 2rem;">$0.000000</div>
+          <div class="value prgx-price-display" id="currentPrice" style="font-size: 2rem;">$—</div>
           <div class="sub" style="margin-top: 0.5rem;">USD per PRGX</div>
         </div>
         <div>
@@ -34,8 +37,8 @@
           <div class="sub" style="margin-top: 0.5rem;">PulseX pool</div>
         </div>
       </div>
-      <div class="price-timestamp" style="margin-top: 1rem; color: var(--text-3); font-size: 0.9rem;">
-        Updated 30s ago
+      <div class="price-timestamp" id="priceTimestamp" style="margin-top: 1rem; color: var(--text-3); font-size: 0.9rem;">
+        Updated just now
       </div>
     </div>
 
@@ -233,8 +236,8 @@
         </div>
         <div class="card">
           <div class="label" style="margin-bottom: 0.5rem;">Burned Tokens</div>
-          <div class="value">0</div>
-          <div class="sub">No token burning</div>
+          <div class="value" id="burnedTokens">0</div>
+          <div class="sub">From fee burning</div>
         </div>
       </div>
     </div>
@@ -242,3 +245,70 @@
   </div>
 
 </div>
+
+<script>
+  // Initialize tokenomics page
+  async function initTokenomics() {
+    await updateTokenomics();
+    // Refresh every 60 seconds
+    setInterval(updateTokenomics, 60000);
+  }
+
+  async function updateTokenomics() {
+    try {
+      const data = await fetchTokenomics();
+      
+      if (!data.success) {
+        console.error('Failed to fetch tokenomics:', data.error);
+        return;
+      }
+
+      // Update price
+      document.getElementById('currentPrice').textContent = 
+        '$' + data.currentPrice.toFixed(8);
+      
+      // Update market cap and liquidity
+      document.getElementById('marketCap').textContent = 
+        formatUSD(data.marketCap);
+      document.getElementById('liquidity').textContent = 
+        formatUSD(data.liquidity);
+      
+      // Update key metrics
+      document.getElementById('circulatingSupply').textContent = 
+        formatNumber(data.circulatingSupply) + ' PRGX';
+      document.getElementById('stakedSupply').textContent = 
+        formatNumber(data.stakedSupply) + ' PRGX';
+      document.getElementById('burnedTokens').textContent = 
+        formatNumber(data.burnedTokens);
+      
+      // Update timestamp
+      document.getElementById('priceTimestamp').innerHTML = 
+        'Updated just now';
+      
+      // Remove loading state
+      document.getElementById('tokenomicsPage').classList.remove('live-data-loading');
+      
+    } catch (error) {
+      console.error('Tokenomics update error:', error);
+    }
+  }
+
+  // Helper functions (if not already in tokenomics.js)
+  function formatNumber(num) {
+    if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+    if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+    if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+    return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+
+  function formatUSD(num) {
+    if (num === 0 || isNaN(num)) return '$—';
+    if (num >= 1e9) return '$' + (num / 1e9).toFixed(2) + 'B';
+    if (num >= 1e6) return '$' + (num / 1e6).toFixed(2) + 'M';
+    if (num >= 1e3) return '$' + (num / 1e3).toFixed(2) + 'K';
+    return '$' + num.toFixed(2);
+  }
+</script>
+
+</body>
+</html>
