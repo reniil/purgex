@@ -56,7 +56,7 @@ async function main() {
 
     const factory = new ethers.ContractFactory(
       sweeperArtifact.abi,
-      sweeper.bytecode,
+      sweeperArtifact.bytecode,
       wallet
     );
 
