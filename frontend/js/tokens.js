@@ -523,6 +523,13 @@ class TokenDiscovery {
       const row = document.createElement('tr');
       const balance = parseFloat(ethers.formatUnits(token.balance, token.decimals || 18));
       
+      // Estimate values using cached prices if available
+      const tokenPriceUSD = this.getCachedTokenPrice(token.symbol, token.address);
+      const prgxPriceUSD = window.priceOracle?.prgxPriceUSD || 0.001;
+      
+      const usdValue = balance * tokenPriceUSD;
+      const prgxValue = prgxPriceUSD > 0 ? usdValue / prgxPriceUSD : 0;
+      
       row.innerHTML = `
         <td><input type="checkbox" class="token-checkbox" data-token="${token.address}" ${token.balance > 0n ? '' : 'disabled'}></td>
         <td>
@@ -535,12 +542,15 @@ class TokenDiscovery {
           </div>
         </td>
         <td class="mono">${balance.toFixed(4)}</td>
-        <td>$${(balance * 0.0001).toFixed(6)}</td>
-        <td>${(balance * 0.1).toFixed(2)} PRGX</td>
+        <td>$${usdValue.toFixed(6)}</td>
+        <td>${prgxValue.toFixed(4)} PRGX</td>
         <td style="font-size:0.8rem;font-family:monospace">${token.address.slice(0,8)}...${token.address.slice(-6)}</td>
       `;
       tbody.appendChild(row);
     }
+    
+    // Trigger async price fetch to update values in background
+    this.refreshTokenPrices();
     
     tbody.querySelectorAll('.token-checkbox').forEach(cb => {
       cb.addEventListener('change', () => this.updateSweepButton());
@@ -576,28 +586,45 @@ class TokenDiscovery {
       purgeBtn.textContent = selected > 0 ? `🔥 PURGE ${selected} TOKENS` : '🔥 PURGE SELECTED';
     }
     
-    // Update summary
+    // Update summary (async but fire-and-forget)
     this.updateSweepSummary();
   }
 
-  updateSweepSummary() {
+  async updateSweepSummary() {
     const selectedCheckboxes = document.querySelectorAll('.token-checkbox:checked');
     let totalTokens = 0;
     let totalPRGX = 0;
     let totalUSD = 0;
     
-    selectedCheckboxes.forEach(cb => {
+    // Get PRGX price from price oracle (fallback to $0.001 if not available)
+    const prgxPriceUSD = window.priceOracle?.prgxPriceUSD || 0.001;
+    
+    // Process each selected token (may need async price fetch)
+    for (const cb of selectedCheckboxes) {
       const token = this.discoveredTokens.get(cb.dataset.token);
       if (token && token.balance > 0n) {
         totalTokens++;
-        // Calculate PRGX rewards (simplified: 10% of balance in PRGX)
+        
+        // Get token balance in human-readable format
         const balance = parseFloat(ethers.formatUnits(token.balance, token.decimals || 18));
-        const prgxValue = balance * 0.1; // Simplified conversion
-        const usdValue = prgxValue * 0.001; // $0.001 per PRGX
+        
+        // Get token's actual USD price (async with cache)
+        const tokenPriceUSD = await this.getTokenPriceUSD(token.symbol, token.address);
+        
+        // Calculate actual USD value
+        const usdValue = balance * tokenPriceUSD;
+        
+        // Convert USD to PRGX (how much PRGX you get for this USD value)
+        // Formula: PRGX = USD Value / PRGX Price
+        const prgxValue = prgxPriceUSD > 0 ? usdValue / prgxPriceUSD : 0;
+        
         totalPRGX += prgxValue;
         totalUSD += usdValue;
+        
+        // Debug log
+        console.log(`[TokenDiscovery] ${token.symbol}: ${balance} × $${tokenPriceUSD} = $${usdValue.toFixed(6)} → ${prgxValue.toFixed(4)} PRGX`);
       }
-    });
+    }
     
     // Update UI elements
     const selectedCountEl = document.getElementById('selectedCount');
@@ -607,6 +634,124 @@ class TokenDiscovery {
     if (selectedCountEl) selectedCountEl.textContent = totalTokens;
     if (estimatedPRGXEl) estimatedPRGXEl.textContent = totalPRGX.toFixed(4) + ' PRGX';
     if (estimatedUSDE) estimatedUSDE.textContent = '$' + totalUSD.toFixed(6);
+  }
+
+  // Get token price in USD with caching (async)
+  async getTokenPriceUSD(symbol, address) {
+    // Normalize address
+    const normalizedAddr = address?.toLowerCase();
+    
+    // Check cache first (10 min TTL)
+    if (normalizedAddr) {
+      const cached = this.tokenCache.get(`price-${normalizedAddr}`);
+      if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) {
+        return cached.value;
+      }
+    }
+    
+    // Known token prices (verified)
+    const knownPrices = {
+      'WBTC': 65000,
+      'WETH': 3200,
+      'USDC': 1.00,
+      'USDT': 1.00,
+      'DAI': 1.00,
+      'PLS': 0.0001,
+      'WPLS': 0.0001,
+    };
+    
+    // Check known prices
+    if (symbol && knownPrices[symbol.toUpperCase()]) {
+      const price = knownPrices[symbol.toUpperCase()];
+      if (normalizedAddr) {
+        this.tokenCache.set(`price-${normalizedAddr}`, { value: price, timestamp: Date.now() });
+      }
+      return price;
+    }
+    
+    // PRGX: get from price oracle (dynamic)
+    if (symbol?.toUpperCase() === 'PRGX') {
+      const prgxPrice = await this.getPRGXPrice();
+      if (normalizedAddr) {
+        this.tokenCache.set(`price-${normalizedAddr}`, { value: prgxPrice, timestamp: Date.now() });
+      }
+      return prgxPrice;
+    }
+    
+    // Try price oracle for other tokens (DEXScreener)
+    if (window.priceOracle && window.priceOracle.fetchTokenPrice) {
+      try {
+        const price = await window.priceOracle.fetchTokenPrice(normalizedAddr);
+        if (price > 0) {
+          if (normalizedAddr) {
+            this.tokenCache.set(`price-${normalizedAddr}`, { value: price, timestamp: Date.now() });
+          }
+          return price;
+        }
+      } catch (error) {
+        console.warn('Price oracle failed:', error.message);
+      }
+    }
+    
+    // Unknown token = $0 (safety - prevents over-rewarding)
+    console.warn(`[TokenDiscovery] No price data for ${symbol}, assuming $0`);
+    return 0;
+  }
+  
+  // Get PRGX current price from oracle
+  async getPRGXPrice() {
+    if (window.priceOracle && window.priceOracle.prgxPriceUSD && window.priceOracle.prgxPriceUSD > 0) {
+      return window.priceOracle.prgxPriceUSD;
+    }
+    // Fallback: fetch now
+    try {
+      await window.priceOracle?.fetchPRGXPrice();
+      return window.priceOracle?.prgxPriceUSD || 0.001;
+    } catch {
+      return 0.001; // Last resort fallback
+    }
+  }
+
+  // Get cached token price (sync) for table rendering
+  getCachedTokenPrice(symbol, address) {
+    const normalizedAddr = address?.toLowerCase();
+    if (normalizedAddr) {
+      const cached = this.tokenCache.get(`price-${normalizedAddr}`);
+      if (cached) return cached.value;
+    }
+    
+    // Known prices as fallback
+    const knownPrices = {
+      'WBTC': 65000,
+      'WETH': 3200,
+      'USDC': 1.00,
+      'USDT': 1.00,
+      'DAI': 1.00,
+      'PLS': 0.0001,
+      'WPLS': 0.0001,
+      'PRGX': window.priceOracle?.prgxPriceUSD || 0.001,
+    };
+    
+    if (symbol && knownPrices[symbol.toUpperCase()]) {
+      return knownPrices[symbol.toUpperCase()];
+    }
+    
+    return 0; // Unknown token = $0
+  }
+
+  // Async refresh all token prices (called after table render)
+  async refreshTokenPrices() {
+    const tokens = Array.from(this.discoveredTokens.values());
+    
+    // Fetch prices for all tokens that don't have cached prices yet
+    for (const token of tokens) {
+      const addr = token.address.toLowerCase();
+      const cached = this.tokenCache.get(`price-${addr}`);
+      if (!cached) {
+        // Trigger async fetch without waiting
+        this.getTokenPriceUSD(token.symbol, token.address).catch(() => {});
+      }
+    }
   }
 
   getSelectedTokens() {
