@@ -18,20 +18,116 @@ class TokenDiscovery {
     this.config = {
       blockscoutApi: 'https://api.scan.pulsechain.com/api/v2',
       transferBlockRange: 5000,
-      batchSize: 20,
-      batchDelay: 100,
+      batchSize: 50, // Increased for faster balance checks
+      batchDelay: 50, // Reduced delay
       retryDelay: 1000,
       maxRetries: 2,
       dustThreshold: 0n,
-      maxConcurrent: 3,
+      maxConcurrent: 5,
       alwaysCheck: [
         CONFIG?.CONTRACTS?.PRGX_TOKEN,
         CONFIG?.CONTRACTS?.WPLS
-      ].filter(addr => addr && /^0x[a-fA-F0-9]{40}$/.test(addr)).map(addr => addr.toLowerCase())
+      ].filter(addr => addr && /^0x[a-fA-F0-9]{40}$/.test(addr)).map(addr => addr.toLowerCase()),
+      // Token database caching
+      tokenDbCacheKey: 'purgex_token_db_v2',
+      tokenDbCacheTTL: 24 * 60 * 60 * 1000, // 24 hours
+      // Discovery cache
+      discoveryCacheKey: (addr) => `purgex_discovery_${addr}`,
+      discoveryCacheTTL: 10 * 60 * 1000, // 10 minutes
+      // Metadata cache
+      metadataCacheKey: (addr) => `purgex_meta_${addr}`,
+      metadataCacheTTL: 1 * 60 * 60 * 1000, // 1 hour
+      // Price cache (local memory only)
+      priceCacheTTL: 10 * 60 * 1000 // 10 minutes
     };
     
     this.activeRequests = 0;
     this.requestQueue = [];
+    
+    // Load token database from localStorage on startup
+    this.loadTokenDbFromStorage();
+  }
+
+  // ================================================================
+  // UTILITY METHODS (defined first to avoid "not a function" errors)
+  // ================================================================
+  
+  // ================================================================
+  // LOCALSTORAGE PERSISTENCE
+  // ================================================================
+  
+  loadTokenDbFromStorage() {
+    try {
+      const cached = localStorage.getItem(this.config.tokenDbCacheKey);
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data.timestamp && (Date.now() - data.timestamp < this.config.tokenDbCacheTTL)) {
+          this.tokenCache.set(this.config.tokenDbCacheKey, {
+            value: new Map(Object.entries(data.tokens)),
+            timestamp: data.timestamp,
+            ttl: this.config.tokenDbCacheTTL
+          });
+          console.log('[TokenDiscovery] Loaded token database from localStorage:', Object.keys(data.tokens).length, 'tokens');
+        }
+      }
+    } catch (error) {
+      console.warn('[TokenDiscovery] Failed to load token DB from storage:', error.message);
+    }
+  }
+
+  saveTokenDbToStorage(tokenMap) {
+    try {
+      const data = {
+        tokens: Object.fromEntries(tokenMap),
+        timestamp: Date.now()
+      };
+      localStorage.setItem(this.config.tokenDbCacheKey, JSON.stringify(data));
+      console.log('[TokenDiscovery] Saved token database to localStorage:', tokenMap.size, 'tokens');
+    } catch (error) {
+      console.warn('[TokenDiscovery] Failed to save token DB to storage:', error.message);
+    }
+  }
+
+  loadDiscoveryFromStorage(walletAddress) {
+    try {
+      const cacheKey = this.config.discoveryCacheKey(walletAddress);
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const data = JSON.parse(cached);
+        if (data.timestamp && (Date.now() - data.timestamp < this.config.discoveryCacheTTL)) {
+          const tokenMap = new Map(Object.entries(data.tokens));
+          console.log('[TokenDiscovery] Loaded discovery from localStorage:', tokenMap.size, 'tokens');
+          return tokenMap;
+        }
+      }
+    } catch (error) {
+      console.warn('[TokenDiscovery] Failed to load discovery from storage:', error.message);
+    }
+    return null;
+  }
+
+  saveDiscoveryToStorage(walletAddress, tokenMap) {
+    try {
+      const cacheKey = this.config.discoveryCacheKey(walletAddress);
+      const data = {
+        tokens: Object.fromEntries(tokenMap),
+        timestamp: Date.now()
+      };
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+      console.log('[TokenDiscovery] Saved discovery to localStorage:', tokenMap.size, 'tokens');
+    } catch (error) {
+      console.warn('[TokenDiscovery] Failed to save discovery to storage:', error.message);
+    }
+  }
+
+  clearStaleDiscoveryCache(walletAddress) {
+    try {
+      const cacheKey = this.config.discoveryCacheKey(walletAddress);
+      localStorage.removeItem(cacheKey);
+      console.log('[TokenDiscovery] Cleared stale discovery cache');
+    } catch (error) {
+      console.warn('[TokenDiscovery] Failed to clear cache:', error.message);
+    }
   }
 
   // ================================================================
@@ -126,12 +222,24 @@ class TokenDiscovery {
     this.updateDiscoveryStatus('Starting discovery...', 0);
     
     try {
-      const cacheKey = `discovery-${address}`;
-      const cached = this.getCached(cacheKey);
-      if (cached) {
-        this.discoveredTokens = new Map(cached);
+      // Check localStorage cache first (fastest)
+      const cachedFromStorage = this.loadDiscoveryFromStorage(address);
+      if (cachedFromStorage) {
+        this.discoveredTokens = cachedFromStorage;
         this.isDiscovering = false;
-        this.updateDiscoveryStatus(`✅ Using cached: ${cached.size} tokens`, 100);
+        this.updateDiscoveryStatus(`✅ Loaded from cache: ${cachedFromStorage.size} tokens`, 100);
+        return this.discoveredTokens;
+      }
+      
+      // Check memory cache (second fastest)
+      const cacheKey = this.config.discoveryCacheKey(address);
+      const cachedFromMemory = this.getCached(cacheKey);
+      if (cachedFromMemory) {
+        this.discoveredTokens = new Map(cachedFromMemory);
+        // Also save to localStorage for next time
+        this.saveDiscoveryToStorage(address, this.discoveredTokens);
+        this.isDiscovering = false;
+        this.updateDiscoveryStatus(`✅ Loaded from memory: ${cachedFromMemory.size} tokens`, 100);
         return this.discoveredTokens;
       }
       
@@ -156,7 +264,7 @@ class TokenDiscovery {
         console.warn('[TokenDiscovery] PLS check failed:', e.message);
       }
       
-      // STEP 2: Load token database
+      // STEP 2: Load token database (from localStorage or API)
       this.updateDiscoveryStatus('Loading token database...', 25);
       const tokenDatabase = await this.loadTokenDatabase();
       console.log(`[TokenDiscovery] Database: ${tokenDatabase.size} tokens`);
@@ -185,6 +293,8 @@ class TokenDiscovery {
       
       this.discoveredTokens = enriched;
       this.setCached(cacheKey, this.discoveredTokens, this.cacheTTL);
+      // Save to localStorage for instant reload next time
+      this.saveDiscoveryToStorage(address, this.discoveredTokens);
       
       const duration = Date.now() - this.stats.startTime;
       this.updateDiscoveryStatus(`✅ Found ${this.discoveredTokens.size} tokens (${Math.round(duration/1000)}s)`, 100);
@@ -219,11 +329,29 @@ class TokenDiscovery {
   // ================================================================
   
   async loadTokenDatabase() {
-    const cacheKey = 'token-db';
-    const cached = this.getTokenDbCache(cacheKey);
-    if (cached) return cached;
+    // Try localStorage first (fastest)
+    try {
+      const stored = localStorage.getItem(this.config.tokenDbCacheKey);
+      if (stored) {
+        const data = JSON.parse(stored);
+        if (data.timestamp && (Date.now() - data.timestamp < this.config.tokenDbCacheTTL)) {
+          console.log('[TokenDiscovery] Token DB from localStorage:', Object.keys(data.tokens).length, 'tokens');
+          return new Map(Object.entries(data.tokens));
+        }
+      }
+    } catch (error) {
+      console.warn('[TokenDiscovery] localStorage read failed:', error.message);
+    }
     
-    console.log('[TokenDiscovery] Fetching token database...');
+    // Try memory cache second
+    const memCached = this.getTokenDbCache(this.config.tokenDbCacheKey);
+    if (memCached) {
+      console.log('[TokenDiscovery] Token DB from memory:', memCached.size, 'tokens');
+      return memCached;
+    }
+    
+    // Fetch from Blockscout API
+    console.log('[TokenDiscovery] Fetching token database from Blockscout...');
     const tokens = new Map();
     
     try {
@@ -241,7 +369,11 @@ class TokenDiscovery {
           });
         }
       }
-      this.setTokenDbCache(cacheKey, tokens, this.cacheTTL);
+      
+      // Cache in both memory and localStorage
+      this.setTokenDbCache(this.config.tokenDbCacheKey, tokens, this.cacheTTL);
+      this.saveTokenDbToStorage(tokens);
+      
       return tokens;
     } catch (error) {
       console.warn('[TokenDiscovery] Token DB fetch failed:', error.message);
@@ -491,9 +623,19 @@ class TokenDiscovery {
     this.discoveryProgress = progress;
     const statusEl = document.getElementById('discoveryStatus');
     const progressBar = document.getElementById('discoveryProgress');
+    const cacheStatus = document.getElementById('cacheStatus');
     
     if (statusEl) statusEl.textContent = message;
     if (progressBar) progressBar.style.width = `${progress}%`;
+    
+    // Update cache status indicator
+    if (cacheStatus) {
+      if (progress === 100) {
+        cacheStatus.innerHTML = `<span class="status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--success-color, #00ff88);"></span><span>Cache ready</span>`;
+      } else if (progress > 0) {
+        cacheStatus.innerHTML = `<span class="status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--warning-color, #ffaa00); animation: pulse 1s infinite;"></span><span>Scanning...</span>`;
+      }
+    }
     
     console.log(`[TokenDiscovery] ${progress}% - ${message}`);
   }

@@ -55,11 +55,22 @@
     <div class="container">
       <!-- Header row -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
-        <h2>Your Dust Tokens</h2>
-        <div class="wallet-info" style="display: flex; align-items: center; gap: 1rem;">
-          <span class="mono address wallet-address">0x1234...5678</span>
-          <span class="badge badge-purple" id="walletPRGXB">— PRGX</span>
-          <button class="btn-icon" onclick="wallet.disconnect()">✕</button>
+        <div>
+          <h2>Your Dust Tokens</h2>
+          <div style="display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-3);">
+            <span class="mono address wallet-address">0x1234...5678</span>
+            <span class="badge badge-purple" id="walletPRGXB">— PRGX</span>
+            <span id="cacheStatus" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+              <span class="status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary-light);"></span>
+              <span>Cache ready</span>
+            </span>
+          </div>
+        </div>
+        <div class="wallet-info" style="display: flex; align-items: center; gap: 0.5rem;">
+          <button class="btn-secondary" onclick="window.tokenDiscovery.refreshTokens()" title="Refresh token list">
+            🔄 Refresh
+          </button>
+          <button class="btn-icon" onclick="wallet.disconnect()" title="Disconnect">✕</button>
         </div>
       </div>
 
