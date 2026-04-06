@@ -562,10 +562,51 @@ class TokenDiscovery {
   updateSweepButton() {
     const selected = document.querySelectorAll('.token-checkbox:checked').length;
     const btn = document.getElementById('sweepBtn');
+    const purgeBtn = document.getElementById('purgeBtn');
+    
+    // Update sweep button
     if (btn) {
       btn.disabled = selected === 0;
       btn.textContent = selected > 0 ? `🧹 Sweep ${selected} Tokens` : '🧹 Select Tokens';
     }
+    
+    // Update purge button
+    if (purgeBtn) {
+      purgeBtn.disabled = selected === 0;
+      purgeBtn.textContent = selected > 0 ? `🔥 PURGE ${selected} TOKENS` : '🔥 PURGE SELECTED';
+    }
+    
+    // Update summary
+    this.updateSweepSummary();
+  }
+
+  updateSweepSummary() {
+    const selectedCheckboxes = document.querySelectorAll('.token-checkbox:checked');
+    let totalTokens = 0;
+    let totalPRGX = 0;
+    let totalUSD = 0;
+    
+    selectedCheckboxes.forEach(cb => {
+      const token = this.discoveredTokens.get(cb.dataset.token);
+      if (token && token.balance > 0n) {
+        totalTokens++;
+        // Calculate PRGX rewards (simplified: 10% of balance in PRGX)
+        const balance = parseFloat(ethers.formatUnits(token.balance, token.decimals || 18));
+        const prgxValue = balance * 0.1; // Simplified conversion
+        const usdValue = prgxValue * 0.001; // $0.001 per PRGX
+        totalPRGX += prgxValue;
+        totalUSD += usdValue;
+      }
+    });
+    
+    // Update UI elements
+    const selectedCountEl = document.getElementById('selectedCount');
+    const estimatedPRGXEl = document.getElementById('estimatedPRGX');
+    const estimatedUSDE = document.getElementById('estimatedUSD');
+    
+    if (selectedCountEl) selectedCountEl.textContent = totalTokens;
+    if (estimatedPRGXEl) estimatedPRGXEl.textContent = totalPRGX.toFixed(4) + ' PRGX';
+    if (estimatedUSDE) estimatedUSDE.textContent = '$' + totalUSD.toFixed(6);
   }
 
   getSelectedTokens() {
@@ -577,12 +618,62 @@ class TokenDiscovery {
     return selected;
   }
 
+  // Property for sweeper compatibility
+  get selectedTokens() {
+    return this.getSelectedTokens();
+  }
+
   refreshTokens() {
     if (!window.wallet?.isConnected) return;
     this.clearCache();
     this.discoverTokens(window.wallet.address).then(() => {
       this.renderTokenTable(this.discoveredTokens);
     });
+  }
+
+  async addCustomToken(tokenAddress) {
+    if (!this.isValidAddress(tokenAddress)) {
+      window.wallet?.showToast?.('Invalid token address', 'error');
+      return;
+    }
+    
+    const normalized = tokenAddress.toLowerCase();
+    
+    // Check if already discovered
+    if (this.discoveredTokens.has(normalized)) {
+      window.wallet?.showToast?.('Token already in list', 'info');
+      return;
+    }
+    
+    try {
+      // Fetch metadata
+      const meta = await this.fetchTokenMetadata(normalized);
+      
+      // Check balance
+      const provider = window.wallet?.provider;
+      if (provider) {
+        const balance = await provider.call({
+          to: normalized,
+          data: '0x70a08231' + this.padAddress(window.wallet.address)
+        });
+        
+        const bal = BigInt(balance);
+        
+        this.discoveredTokens.set(normalized, {
+          address: normalized,
+          balance: bal,
+          symbol: meta?.symbol || '???',
+          name: meta?.name || 'Unknown Token',
+          decimals: meta?.decimals || 18
+        });
+        
+        this.renderTokenTable(this.discoveredTokens);
+        window.wallet?.showToast?.('Token added', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to add custom token:', error);
+      window.wallet?.showToast?.('Failed to add token', 'error');
+    }
   }
 }
 
