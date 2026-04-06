@@ -6,7 +6,7 @@ pragma solidity ^0.8.20;
 //  PRGX treasury multisig: submit → confirm → execute
 // ─────────────────────────────────────────────────────────────────────────────
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.0.0/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract SimpleMultisig is ReentrancyGuard {
 

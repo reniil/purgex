@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MIT
 // PurgeX Sweeper - ERC20 dust consolidator (Remix-ready)
-// Fixed import path for ReentrancyGuard in OZ v5
 pragma solidity ^0.8.20;
 
-// Imports for Remix IDE - using raw.githubusercontent.com URLs (OpenZeppelin v5.0.0)
-// These fetch directly from GitHub without npm/CDN
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// PulseX V2 interfaces
 interface IPulseXRouter {
     function factory() external pure returns (address);
     function WETH() external pure returns (address);
@@ -35,8 +31,11 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ========== CONSTANTS ==========
-    uint256 public constant MAX_FEE_BPS = 500; // 5% max
-    uint256 public constant DEFAULT_FEE_BPS = 500; // 5% default (changed from 1%)
+    uint256 public constant MAX_FEE_BPS = 500;
+    uint256 public constant DEFAULT_FEE_BPS = 500;
+    uint256 public constant BONUS_PER_TOKEN = 100 * 1e18;
+    uint256 public constant FEE_BURN_PERCENT = 50;
+    uint256 public constant FEE_TREASURY_PERCENT = 30;
 
     // ========== STATE ==========
     address public prgxToken;
@@ -44,18 +43,9 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     address public wpls;
     uint256 public protocolFeeBps;
     address public feeRecipient;
-    
-    // Per-user custom destinations
+    address public bonusWallet;
+
     mapping(address => address) public tokenDestinations;
-    
-    // Dust sweep bonus configuration
-    uint256 public constant BONUS_PER_TOKEN = 100 * 1e18; // 100 PRGX per token swept
-    address public bonusWallet; // Where bonus PRGX is transferred from
-    
-    // Fee distribution percentages
-    uint256 public constant FEE_BURN_PERCENT = 50; // 50% burned
-    uint256 public constant FEE_TREASURY_PERCENT = 30; // 30% to treasury
-    // Staking portion = remaining (20%)
 
     // ========== EVENTS ==========
     event Sweep(
@@ -74,13 +64,6 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     event FeeDistributed(address token, uint256 burnAmount, uint256 treasuryAmount, uint256 stakingAmount);
 
     // ========== CONSTRUCTOR ==========
-    /**
-     * @dev Constructor
-     * @param _prgxToken PRGX token address (deploy this first!)
-     * @param _pulseXRouter PulseX V2 router
-     * @param _wpls Wrapped PLS address
-     * @param _feeRecipient Where protocol fees go
-     */
     constructor(
         address _prgxToken,
         address _pulseXRouter,
@@ -101,11 +84,6 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
 
     // ========== MAIN FUNCTIONS ==========
 
-    /**
-     * @dev Sweep tokens to PRGX
-     * @param tokenAddresses Array of tokens to sweep
-     * @param minAmountsOut Minimum PRGX to receive (0 = accept any)
-     */
     function sweepTokens(
         address[] calldata tokenAddresses,
         uint256[] calldata minAmountsOut
@@ -120,107 +98,74 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
         }
     }
 
-    /**
-     * @dev Internal: sweep single token
-     */
     function _sweepToken(address user, address token, uint256 minOut) internal {
-        // Get balances
         uint256 bal = IERC20(token).balanceOf(user);
         uint256 allow = IERC20(token).allowance(user, address(this));
-        
+
         require(bal > 0, "No balance");
         require(allow > 0, "No allowance");
 
-        // Calculate sweep amount
         uint256 sweepAmt = bal < allow ? bal : allow;
 
-        // Calculate fee
         uint256 fee = (sweepAmt * protocolFeeBps) / 10000;
         require(sweepAmt > fee, "Amount too small");
         uint256 netAmt = sweepAmt - fee;
 
-        // Transfer fee to recipient
         if (fee > 0) {
             IERC20(token).safeTransferFrom(user, feeRecipient, fee);
             emit ProtocolFee(token, fee, protocolFeeBps);
         }
 
-        // Transfer net to sweeper
         IERC20(token).safeTransferFrom(user, address(this), netAmt);
-
-        // Approve router
         IERC20(token).approve(pulseXRouter, netAmt);
 
-        // Build swap path and determine recipient
-        address[] memory path = getSwapPath(token);
+        address[] memory swapPath = getSwapPath(token);
         address recipient = tokenDestinations[user];
         if (recipient == address(0)) recipient = user;
 
-        // Execute swap
         uint256[] memory amounts = IPulseXRouter(pulseXRouter).swapExactTokensForTokens(
             netAmt,
             minOut,
-            path,
+            swapPath,
             recipient,
             block.timestamp + 3600
         );
 
         uint256 prgxOut = amounts[amounts.length - 1];
-        
-        // Distribute fees and mint bonus
+
         if (fee > 0) {
             _distributeFees(token, fee);
         }
         _mintBonus(user, 1);
-        
+
         emit Sweep(user, token, sweepAmt, prgxOut, recipient);
     }
-    
-    /**
-     * @dev Internal: distribute collected fees
-     * 50% burned, 50% to treasury (30% direct + 20% staking rewards pool)
-     * Note: fee already transferred to feeRecipient in _sweepToken
-     */
+
     function _distributeFees(address token, uint256 feeAmount) internal {
         uint256 burnAmount = (feeAmount * FEE_BURN_PERCENT) / 100;
         uint256 treasuryAmount = (feeAmount * FEE_TREASURY_PERCENT) / 100;
         uint256 stakingAmount = feeAmount - burnAmount - treasuryAmount;
-        
-        // Burn portion: transfer from feeRecipient to address(0)
+
         if (burnAmount > 0) {
             IERC20(token).transferFrom(feeRecipient, address(0), burnAmount);
         }
-        
-        // Treasury portion: keep in feeRecipient (it's already there from _sweepToken)
-        // Optionally could transfer to separate treasury wallet
-        
-        // Staking portion: transfer from feeRecipient to this contract (staking rewards pool)
+
         if (stakingAmount > 0) {
             IERC20(token).safeTransferFrom(feeRecipient, address(this), stakingAmount);
-            // This contract now holds staking rewards to distribute
         }
-        
+
         emit FeeDistributed(token, burnAmount, treasuryAmount, stakingAmount);
     }
-    
-    /**
-     * @dev Mint bonus PRGX to user (100 PRGX per token swept)
-     */
+
     function _mintBonus(address user, uint256 tokenCount) internal {
         require(bonusWallet != address(0), "Bonus wallet not set");
-        
+
         uint256 bonusAmount = tokenCount * BONUS_PER_TOKEN;
-        
-        // Mint PRGX to user (assuming PRGX has mint function or we hold enough supply)
-        // Since we can't mint arbitrary ERC20, we transfer from bonus wallet instead
         IERC20(prgxToken).transferFrom(bonusWallet, user, bonusAmount);
-        
+
         emit BonusMinted(user, tokenCount, bonusAmount);
     }
 
-    /**
-     * @dev Public: mint bonus for a user (callable by sweeper)
-     */
     function mintBonus(address user) external {
         require(msg.sender == address(this), "Only sweeper");
         _mintBonus(user, 1);
@@ -229,28 +174,25 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
     /**
      * @dev Get best swap path for token → PRGX
      */
-    function getSwapPath(address token) public view returns (address[] memory) {
-        // If token is WPLS, direct swap
+    function getSwapPath(address token) public view returns (address[] memory path) {
         if (token == wpls) {
-            address[] memory path = new address[](2);
+            path = new address[](2);
             path[0] = wpls;
             path[1] = prgxToken;
             return path;
         }
 
-        // Check for direct pair
         address factory = IPulseXRouter(pulseXRouter).factory();
         address directPair = IPulseXFactory(factory).getPair(token, prgxToken);
-        
+
         if (directPair != address(0)) {
-            address[] memory path = new address[](2);
+            path = new address[](2);
             path[0] = token;
             path[1] = prgxToken;
             return path;
         }
 
-        // Two-hop via WPLS
-        address[] memory path = new address[](3);
+        path = new address[](3);
         path[0] = token;
         path[1] = wpls;
         path[2] = prgxToken;
@@ -264,10 +206,7 @@ contract PurgeXSweeper is Ownable(msg.sender), ReentrancyGuard {
         protocolFeeBps = bps;
         emit ProtocolFeeUpdated(bps);
     }
-    
-    /**
-     * @dev Get current protocol fee percentage
-     */
+
     function getProtocolFee() external view returns (uint256) {
         return protocolFeeBps;
     }
