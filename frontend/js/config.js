@@ -29,6 +29,7 @@ const CONFIG = {
     DEXSCREENER_BASE: 'https://api.dexscreener.com/latest/dex/tokens',
     IPULSE_ROUTER: '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02',
     IPULSE_FACTORY: '0x43d7dA3090A2F0c8A0b8F9a5E3E4bA6F5E6E8E',
+    BLOCKSCOUT_BASE: 'https://api.scan.pulsechain.com/api/v2',
   }
 };
 
