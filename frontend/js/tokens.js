@@ -1,11 +1,10 @@
 // ================================================================
-// TOKEN DISCOVERY — ERC-20 token discovery with 3-strategy approach
+// TOKEN DISCOVERY MODULE - COMPREHENSIVE VERSION
 // ================================================================
 
 class TokenDiscovery {
   constructor() {
     this.discoveredTokens = new Map();
-    this.selectedTokens = new Set();
     this.isDiscovering = false;
     this.discoveryProgress = 0;
   }
@@ -16,50 +15,43 @@ class TokenDiscovery {
   async getWalletTokens(address) {
     if (!address) throw new Error('Wallet address required');
     
+    return await this.discoverTokens(address);
+  }
+
+  async discoverTokens(address) {
     this.isDiscovering = true;
-    this.discoveredTokens.clear();
-    this.updateDiscoveryStatus('Scanning wallet for ERC-20 tokens...', 0);
+    this.updateDiscoveryStatus('Starting comprehensive token discovery...', 0);
     
     try {
-      // Strategy A: Direct RPC calls
-      this.updateDiscoveryStatus('Scanning blockchain for tokens...', 10);
-      const directRPCTokens = await this.fetchFromDirectRPC(address);
+      // Strategy A: Aggressive blockchain scanning - ALL tokens
+      this.updateDiscoveryStatus('Scanning ALL tokens in wallet...', 20);
+      const allTokens = await this.fetchAllTokens(address);
       
-      // Strategy B: Known dust tokens
-      this.updateDiscoveryStatus('Checking known dust tokens...', 30);
-      const dustTokens = await this.fetchKnownDustTokens(address);
+      // Strategy B: PulseX factory enumeration - ALL pairs
+      this.updateDiscoveryStatus('Enumerating PulseX liquidity pairs...', 40);
+      const pulseXTokens = await this.fetchAllPulseXPairs(address);
       
-      // Strategy C: PulseX DEX discovery (more comprehensive)
-      this.updateDiscoveryStatus('Scanning PulseX DEX pairs...', 50);
-      const pulseXTokens = await this.fetchFromPulseXDEX(address);
+      // Strategy C: Popular token addresses - comprehensive list
+      this.updateDiscoveryStatus('Checking known PulseChain tokens...', 60);
+      const knownTokens = await this.fetchKnownPulseChainTokens(address);
       
-      // Strategy D: Popular tokens discovery
-      this.updateDiscoveryStatus('Scanning popular PulseChain tokens...', 70);
-      const popularTokens = await this.fetchPopularTokens(address);
-      
-      // Strategy E: Transfer event scanning
-      this.updateDiscoveryStatus('Scanning transfer events...', 90);
+      // Strategy D: Transfer events - extended range
+      this.updateDiscoveryStatus('Scanning transfer history...', 80);
       const eventTokens = await this.fetchFromTransferEvents(address);
       
-      // Merge and deduplicate
+      // Merge all discovered tokens
       this.updateDiscoveryStatus('Processing results...', 95);
-      const allTokens = new Map([...directRPCTokens, ...dustTokens, ...pulseXTokens, ...popularTokens, ...eventTokens]);
+      const mergedTokens = new Map([...allTokens, ...pulseXTokens, ...knownTokens, ...eventTokens]);
       
-      // Filter and enrich
-      const filteredTokens = await this.filterAndEnrichTokens(allTokens);
+      // Filter for display (keep ALL tokens, just filter out excluded ones)
+      const displayTokens = await this.filterForDisplay(mergedTokens);
       
-      // If no tokens found, show helpful message
-      if (filteredTokens.size === 0) {
-        console.log('No tokens found, showing empty state');
-        this.updateDiscoveryStatus('No dust tokens found in your wallet', 100);
-      }
-      
-      // Sort by estimated value
-      const sortedTokens = this.sortTokensByValue(filteredTokens);
+      // Sort by relevance
+      const sortedTokens = this.sortTokensByRelevance(displayTokens);
       
       this.discoveredTokens = sortedTokens;
       this.isDiscovering = false;
-      this.updateDiscoveryStatus(`Found ${sortedTokens.size} dust tokens`, 100);
+      this.updateDiscoveryStatus(`Found ${sortedTokens.size} tokens`, 100);
       
       return sortedTokens;
     } catch (error) {
@@ -71,308 +63,317 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // STRATEGY A: Direct RPC calls (most reliable)
+  // STRATEGY A: Aggressive blockchain scanning - ALL tokens
   // ================================================================
-  async fetchFromDirectRPC(address) {
+  async fetchAllTokens(address) {
     const tokens = new Map();
     
     if (!window.wallet?.provider) {
-      console.warn('No wallet provider for direct RPC calls');
+      console.warn('No wallet provider for aggressive scanning');
       return tokens;
     }
     
     try {
-      // Get current block number
       const provider = window.wallet.provider;
-      const currentBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, currentBlock - 50000); // Last 50k blocks for more discovery
       
-      // Create Transfer event filter
+      // Scan much larger block range for comprehensive discovery
+      const currentBlock = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, currentBlock - 50000); // Reduced to 50k blocks to avoid RPC limits
+      
+      // Get all Transfer events (not just to user, but from user too)
       const transferTopic = ethers.id('Transfer(address,address,uint256)');
       
-      // Get Transfer events to the user's address
-      const logs = await provider.getLogs({
-        address: null, // Any contract
-        topics: [
-          null, // Any Transfer event
-          null, // Any from address  
-          ethers.zeroPadValue(address.toLowerCase(), 32) // To: user address
-        ],
-        fromBlock: fromBlock,
-        toBlock: 'latest'
-      });
-      
-      console.log(`Found ${logs.length} transfer events`);
-      
-      // Group by contract address and filter out known non-token contracts and native tokens
-      const contractAddresses = new Set();
-      const nonTokenContracts = new Set([
-        CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase(),
-        CONFIG.CONTRACTS.SWEEPER.toLowerCase(),
-        CONFIG.CONTRACTS.STAKING.toLowerCase(),
-        CONFIG.CONTRACTS.MULTISIG_TREASURY.toLowerCase(),
-        CONFIG.CONTRACTS.LP_TOKEN.toLowerCase(),
-        CONFIG.APIS.IPULSE_ROUTER.toLowerCase(),
-        CONFIG.APIS.IPULSE_FACTORY.toLowerCase(),
-        '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase(), // WPLS
-        '0x02f26235791bf5e65a3253aa06845c0451237567'.toLowerCase()  // PLS
-      ]);
-      
-      for (const log of logs) {
-        const addr = log.address.toLowerCase();
-        // Skip known non-token contracts
-        if (!nonTokenContracts.has(addr)) {
-          contractAddresses.add(addr);
-        }
-      }
-      
-      console.log(`Checking ${contractAddresses.size} unique token contracts`);
-      
-      // Check balances for these contracts
-      const balancePromises = Array.from(contractAddresses).map(async (contractAddr) => {
-        try {
-          const contract = new ethers.Contract(contractAddr, CONFIG.ABIS.ERC20, provider);
-          const balance = await contract.balanceOf(address);
-          
-          if (balance > 0n) {
-            // Get token info
-            let symbol = '???';
-            let name = 'Unknown Token';
-            let decimals = 18;
-            
-            try {
-              symbol = await contract.symbol();
-              name = await contract.name();
-              decimals = await contract.decimals();
-            } catch (error) {
-              console.warn(`Failed to get token info for ${contractAddr}:`, error);
-            }
-            
-            return {
-              address: contractAddr,
-              symbol: symbol,
-              name: name,
-              decimals: decimals,
-              balance: balance,
-              balanceFormatted: ethers.formatUnits(balance, decimals),
-              source: 'direct-rpc'
-            };
+      try {
+        const logs = await provider.getLogs({
+          address: null,
+          topics: [
+            transferTopic,
+            [
+              ethers.zeroPadValue(address.toLowerCase(), 32), // From: user
+              null
+            ],
+            null
+          ],
+          fromBlock: fromBlock,
+          toBlock: 'latest'
+        });
+        
+        // Also get Transfer events TO user
+        const logsTo = await provider.getLogs({
+          address: null,
+          topics: [
+            transferTopic,
+            null,
+            ethers.zeroPadValue(address.toLowerCase(), 32) // To: user
+          ],
+          fromBlock: fromBlock,
+          toBlock: 'latest'
+        });
+        
+        // Combine all logs
+        const allLogs = [...logs, ...logsTo];
+        const tokenAddresses = new Set();
+        
+        for (const log of allLogs) {
+          if (log.address) {
+            tokenAddresses.add(log.address.toLowerCase());
           }
-        } catch (error) {
-          // Silently skip tokens that fail (not ERC-20, doesn't exist, etc.)
-          // These are not critical errors - just means the address isn't a valid token
-          return null;
         }
-        return null;
-      });
-      
-      const results = await Promise.all(balancePromises);
-      
-      for (const token of results) {
-        if (token) {
-          tokens.set(token.address, token);
-        }
-      }
-      
-    } catch (error) {
-      console.warn('Direct RPC token discovery failed:', error);
-    }
-    
-    return tokens;
-  }
-
-  // ================================================================
-  // STRATEGY B: Known dust tokens
-  // ================================================================
-  async fetchKnownDustTokens(address) {
-    const tokens = new Map();
-    
-    if (CONFIG.KNOWN_DUST_TOKENS.length === 0) return tokens;
-    
-    try {
-      // Batch check balances
-      const balances = await this.batchFetchBalances(CONFIG.KNOWN_DUST_TOKENS, address);
-      
-      for (const [tokenAddress, balance] of Object.entries(balances)) {
-        if (balance > 0n) {
+        
+        console.log(`Found ${tokenAddresses.size} unique token addresses in ${allLogs.length} transfer events`);
+        
+        // Check ALL these tokens for balance (even if 0)
+        const addresses = Array.from(tokenAddresses);
+        const balances = await this.batchFetchBalances(addresses, address);
+        
+        for (const [tokenAddress, balance] of Object.entries(balances)) {
           const metadata = await this.fetchTokenMetadata(tokenAddress);
-          tokens.set(tokenAddress.toLowerCase(), {
+          tokens.set(tokenAddress, {
             address: tokenAddress,
             ...metadata,
             balance: balance,
             balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
-            source: 'dustlist'
+            source: 'aggressive-scan'
+          });
+        }
+      } catch (rpcError) {
+        console.warn('RPC error in aggressive scanning, falling back to limited scan:', rpcError);
+        // Fallback: just scan recent blocks
+        const recentFromBlock = Math.max(0, currentBlock - 10000);
+        
+        const logs = await provider.getLogs({
+          address: null,
+          topics: [
+            transferTopic,
+            null,
+            ethers.zeroPadValue(address.toLowerCase(), 32)
+          ],
+          fromBlock: recentFromBlock,
+          toBlock: 'latest'
+        });
+        
+        const tokenAddresses = new Set();
+        for (const log of logs) {
+          if (log.address) {
+            tokenAddresses.add(log.address.toLowerCase());
+          }
+        }
+        
+        const addresses = Array.from(tokenAddresses);
+        const balances = await this.batchFetchBalances(addresses, address);
+        
+        for (const [tokenAddress, balance] of Object.entries(balances)) {
+          const metadata = await this.fetchTokenMetadata(tokenAddress);
+          tokens.set(tokenAddress, {
+            address: tokenAddress,
+            ...metadata,
+            balance: balance,
+            balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
+            source: 'limited-scan'
           });
         }
       }
+      
+      return tokens;
     } catch (error) {
-      console.warn('Known dust tokens check failed:', error);
+      console.warn('Aggressive token scanning failed:', error);
+      return tokens;
     }
-    
-    return tokens;
   }
 
   // ================================================================
-  // STRATEGY E: PulseX DEX token discovery
+  // STRATEGY B: PulseX factory enumeration - ALL pairs
   // ================================================================
-  async fetchFromPulseXDEX(address) {
+  async fetchAllPulseXPairs(address) {
     const tokens = new Map();
     
     if (!window.wallet?.provider) {
-      console.warn('No wallet provider for PulseX DEX calls');
+      console.warn('No wallet provider for PulseX scanning');
       return tokens;
     }
     
     try {
       const provider = window.wallet.provider;
       
-      // Get all pairs from iPulse factory
+      // PulseX Factory address
+      const pulseXFactory = '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02';
+      
       const factory = new ethers.Contract(
-        CONFIG.APIS.IPULSE_FACTORY,
+        pulseXFactory,
         [
           'function allPairs(uint256) view returns (address)',
-          'function allPairsLength() view returns (uint256)'
+          'function allPairsLength() view returns (uint256)',
+          'function getPair(address tokenA, address tokenB) view returns (address)'
         ],
         provider
       );
       
-      const pairsLength = await factory.allPairsLength();
-      console.log(`Found ${pairsLength} pairs on iPulse`);
-      
-      // Check last 100 pairs (to avoid too many calls)
-      const checkCount = Math.min(Number(pairsLength), 100);
-      const pairPromises = [];
-      
-      for (let i = 0; i < checkCount; i++) {
-        pairPromises.push(this.checkiPulsePair(factory, i, address));
-      }
-      
-      const results = await Promise.allSettled(pairPromises);
-      
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
-          tokens.set(result.value.address, result.value);
-        }
-      }
-      
-    } catch (error) {
-      console.warn('iPulse DEX discovery failed:', error);
-    }
-    
-    return tokens;
-  }
-
-  async checkiPulsePair(factory, index, userAddress) {
-    try {
-      const pairAddress = await factory.allPairs(index);
-      
-      const pair = new ethers.Contract(
-        pairAddress,
-        [
-          'function token0() view returns (address)',
-          'function token1() view returns (address)',
-          'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)'
-        ],
-        window.wallet.provider
-      );
-      
-      const [token0Addr, token1Addr] = await Promise.all([
-        pair.token0(),
-        pair.token1()
-      ]);
-      
-      // Check both tokens for user balance
-      const tokenAddresses = [token0Addr, token1Addr];
-      
-      for (const tokenAddr of tokenAddresses) {
-        const balance = await this.getTokenBalance(tokenAddr, userAddress);
-        if (balance > 0n) {
-          const tokenInfo = await this.getTokenInfo(tokenAddr);
-          if (tokenInfo) {
-            return {
-              address: tokenAddr,
-              ...tokenInfo,
-              balance: balance,
-              balanceFormatted: ethers.formatUnits(balance, tokenInfo.decimals),
-              source: 'ipulse-dex'
-            };
+      try {
+        // Get total number of pairs
+        const totalPairs = await factory.allPairsLength();
+        console.log(`PulseX has ${totalPairs.toString()} pairs to scan`);
+        
+        // Limit to first 1000 pairs to avoid RPC timeouts
+        const pairsToScan = Math.min(Number(totalPairs), 1000);
+        
+        // Scan pairs (with batching to avoid RPC limits)
+        const batchSize = 50; // Smaller batch size
+        const allTokenAddresses = new Set();
+        
+        for (let i = 0; i < pairsToScan; i += batchSize) {
+          const endIndex = Math.min(i + batchSize, pairsToScan);
+          const batchPromises = [];
+          
+          for (let j = i; j < endIndex; j++) {
+            batchPromises.push(factory.allPairs(j));
+          }
+          
+          try {
+            const pairAddresses = await Promise.all(batchPromises);
+            
+            for (const pairAddress of pairAddresses) {
+              try {
+                const pair = new ethers.Contract(
+                  pairAddress,
+                  [
+                    'function token0() view returns (address)',
+                    'function token1() view returns (address)'
+                  ],
+                  provider
+                );
+                
+                const [token0Addr, token1Addr] = await Promise.all([
+                  pair.token0(),
+                  pair.token1()
+                ]);
+                
+                allTokenAddresses.add(token0Addr.toLowerCase());
+                allTokenAddresses.add(token1Addr.toLowerCase());
+              } catch (error) {
+                console.warn(`Failed to get tokens for pair ${pairAddress}:`, error);
+              }
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch batch ${i}-${endIndex}:`, error);
+          }
+          
+          // Add delay to avoid rate limiting
+          if (i + batchSize < pairsToScan) {
+            await new Promise(resolve => setTimeout(resolve, 200));
           }
         }
+        
+        console.log(`Found ${allTokenAddresses.size} unique tokens from PulseX pairs`);
+        
+        // Check balances for all these tokens
+        const addresses = Array.from(allTokenAddresses);
+        const balances = await this.batchFetchBalances(addresses, address);
+        
+        for (const [tokenAddress, balance] of Object.entries(balances)) {
+          const metadata = await this.fetchTokenMetadata(tokenAddress);
+          tokens.set(tokenAddress, {
+            address: tokenAddress,
+            ...metadata,
+            balance: balance,
+            balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
+            source: 'pulsex-pairs'
+          });
+        }
+      } catch (factoryError) {
+        console.warn('PulseX factory call failed, skipping PulseX scanning:', factoryError);
       }
       
-      return null;
+      return tokens;
     } catch (error) {
-      console.warn(`Failed to check iPulse pair ${index}:`, error);
-      return null;
+      console.warn('PulseX pair enumeration failed:', error);
+      return tokens;
     }
   }
 
-  async getTokenBalance(tokenAddress, userAddress) {
+  // ================================================================
+  // STRATEGY C: Known PulseChain tokens - comprehensive list
+  // ================================================================
+  async fetchKnownPulseChainTokens(address) {
+    const tokens = new Map();
+    
+    if (!window.wallet?.provider) {
+      console.warn('No wallet provider for known PulseChain tokens');
+      return tokens;
+    }
+    
     try {
-      const contract = new ethers.Contract(
-        tokenAddress,
-        CONFIG.ABIS.ERC20,
-        window.wallet.provider
-      );
-      return await contract.balanceOf(userAddress);
+      // Common PulseChain tokens to check (excluding native and major tokens)
+      const knownTokenAddresses = [
+        '0x95a77ee61e7444c3a3c2a3570d3e4d7a3c3c3c', // Example token 1
+        '0x1234567890123456789012345678901234567890', // Example token 2
+        '0xabcdef1234567890abcdef1234567890abcdef123456', // Example token 3
+        // Add more real PulseChain token addresses as needed
+      ];
+      
+      for (const tokenAddress of knownTokenAddresses) {
+        try {
+          const balance = await this.getTokenBalance(tokenAddress, address);
+          if (balance > 0n) {
+            const tokenInfo = await this.getTokenInfo(tokenAddress);
+            if (tokenInfo) {
+              tokens.set(tokenAddress, {
+                address: tokenAddress,
+                ...tokenInfo,
+                balance: balance,
+                balanceFormatted: ethers.formatUnits(balance, tokenInfo.decimals),
+                source: 'known-pulsechain'
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to check known PulseChain token ${tokenAddress}:`, error);
+        }
+      }
+      
+      return tokens;
     } catch (error) {
-      return 0n;
+      console.warn('Known PulseChain tokens discovery failed:', error);
+      return tokens;
     }
   }
 
-  async getTokenInfo(tokenAddress) {
-    try {
-      const contract = new ethers.Contract(
-        tokenAddress,
-        CONFIG.ABIS.ERC20,
-        window.wallet.provider
-      );
-      
-      const [name, symbol, decimals] = await Promise.all([
-        contract.name(),
-        contract.symbol(),
-        contract.decimals()
-      ]);
-      
-      return { name, symbol, decimals: Number(decimals) };
-    } catch (error) {
-      return null;
-    }
-  }
+  // ================================================================
+  // STRATEGY D: Transfer event scanning
+  // ================================================================
   async fetchFromTransferEvents(address) {
     const tokens = new Map();
     
+    if (!window.wallet?.provider) {
+      console.warn('No wallet provider for transfer event scanning');
+      return tokens;
+    }
+    
     try {
-      if (!window.wallet?.provider) return tokens;
-      
-      // Get recent block number (last 5000 blocks)
       const provider = window.wallet.provider;
-      const latestBlock = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, latestBlock - 5000);
+      const currentBlock = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, currentBlock - 100000); // Extended range
       
-      // Create filter for Transfer events TO this address
-      const filter = {
-        address: null, // Any ERC-20
+      const transferTopic = ethers.id('Transfer(address,address,uint256)');
+      
+      const logs = await provider.getLogs({
+        address: null,
         topics: [
-          ethers.id('Transfer(address,address,uint256)'),
+          transferTopic,
           null,
-          ethers.zeroPadValue(address, 32)
+          ethers.zeroPadValue(address.toLowerCase(), 32)
         ],
         fromBlock: fromBlock,
         toBlock: 'latest'
-      };
+      });
       
-      const logs = await provider.getLogs(filter);
       const tokenAddresses = new Set();
       
-      // Extract unique token addresses
       for (const log of logs) {
         if (log.address) {
           tokenAddresses.add(log.address.toLowerCase());
         }
       }
       
-      // Batch check balances for discovered tokens
       const addresses = Array.from(tokenAddresses);
       const balances = await this.batchFetchBalances(addresses, address);
       
@@ -384,19 +385,20 @@ class TokenDiscovery {
             ...metadata,
             balance: balance,
             balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
-            source: 'events'
+            source: 'transfer-events'
           });
         }
       }
+      
+      return tokens;
     } catch (error) {
       console.warn('Transfer event scanning failed:', error);
+      return tokens;
     }
-    
-    return tokens;
   }
 
   // ================================================================
-  // BATCH CONTRACT CALLS
+  // BATCH OPERATIONS
   // ================================================================
   async batchFetchBalances(tokenAddresses, userAddress) {
     const balances = {};
@@ -404,7 +406,6 @@ class TokenDiscovery {
     if (!window.wallet?.provider) return balances;
     
     try {
-      // Create multicall-like batch using Promise.all
       const promises = tokenAddresses.map(async (tokenAddress) => {
         try {
           // Skip zero address, invalid addresses, and native tokens
@@ -414,7 +415,6 @@ class TokenDiscovery {
             return [tokenAddress, 0n];
           }
           
-          // Validate address checksum
           const validAddress = ethers.getAddress(tokenAddress);
           
           const contract = new ethers.Contract(
@@ -425,8 +425,6 @@ class TokenDiscovery {
           const balance = await contract.balanceOf(userAddress);
           return [tokenAddress, balance];
         } catch (error) {
-          // Silently skip tokens that fail (not ERC-20, doesn't exist, etc.)
-          console.warn(`Skipping token ${tokenAddress}: ${error.code || error.message}`);
           return [tokenAddress, 0n];
         }
       });
@@ -444,7 +442,7 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // FETCH TOKEN METADATA
+  // TOKEN METADATA
   // ================================================================
   async fetchTokenMetadata(tokenAddress) {
     const defaultMetadata = {
@@ -469,9 +467,9 @@ class TokenDiscovery {
       ]);
       
       return {
-        symbol: symbol.status === 'fulfilled' ? symbol.value : '???',
-        name: name.status === 'fulfilled' ? name.value : 'Unknown Token',
-        decimals: decimals.status === 'fulfilled' ? Number(decimals.value) : 18
+        symbol: symbol.status === 'fulfilled' ? symbol.value : defaultMetadata.symbol,
+        name: name.status === 'fulfilled' ? name.value : defaultMetadata.name,
+        decimals: decimals.status === 'fulfilled' ? Number(decimals.value) : defaultMetadata.decimals
       };
     } catch (error) {
       console.warn(`Failed to fetch metadata for ${tokenAddress}:`, error);
@@ -479,57 +477,47 @@ class TokenDiscovery {
     }
   }
 
-  // ================================================================
-  // STRATEGY F: Popular tokens discovery
-  // ================================================================
-  async fetchPopularTokens(address) {
-    const tokens = new Map();
-    
-    if (!window.wallet?.provider) {
-      console.warn('No wallet provider for popular tokens discovery');
-      return tokens;
-    }
-    
+  async getTokenBalance(tokenAddress, userAddress) {
     try {
-      // Common PulseChain tokens to check (excluding native and major tokens)
-      const popularTokenAddresses = [
-        '0x95a77ee61e7444c3a3c2a3570d3e4d7a3c3c3c', // Example token 1
-        '0x1234567890123456789012345678901234567890', // Example token 2
-        '0xabcdef1234567890abcdef1234567890abcdef123456', // Example token 3
-        // Add more real PulseChain token addresses as needed
-      ];
-      
-      for (const tokenAddress of popularTokenAddresses) {
-        try {
-          const balance = await this.getTokenBalance(tokenAddress, address);
-          if (balance > 0n) {
-            const tokenInfo = await this.getTokenInfo(tokenAddress);
-            if (tokenInfo) {
-              tokens.set(tokenAddress, {
-                address: tokenAddress,
-                ...tokenInfo,
-                balance: balance,
-                balanceFormatted: ethers.formatUnits(balance, tokenInfo.decimals),
-                source: 'popular'
-              });
-            }
-          }
-        } catch (error) {
-          console.warn(`Failed to check popular token ${tokenAddress}:`, error);
-        }
-      }
-      
-      return tokens;
+      const contract = new ethers.Contract(
+        tokenAddress,
+        CONFIG.ABIS.ERC20,
+        window.wallet.provider
+      );
+      return await contract.balanceOf(userAddress);
     } catch (error) {
-      console.warn('Popular tokens discovery failed:', error);
-      return tokens;
+      return 0n;
+    }
+  }
+
+  async getTokenInfo(tokenAddress) {
+    try {
+      const contract = new ethers.Contract(
+        tokenAddress,
+        CONFIG.ABIS.ERC20,
+        window.wallet.provider
+      );
+      
+      const [symbol, name, decimals] = await Promise.allSettled([
+        contract.symbol(),
+        contract.name(),
+        contract.decimals()
+      ]);
+      
+      return {
+        symbol: symbol.status === 'fulfilled' ? symbol.value : '???',
+        name: name.status === 'fulfilled' ? name.value : 'Unknown Token',
+        decimals: decimals.status === 'fulfilled' ? Number(decimals.value) : 18
+      };
+    } catch (error) {
+      return null;
     }
   }
 
   // ================================================================
-  // FILTER AND ENRICH TOKENS
+  // FILTERING AND SORTING
   // ================================================================
-  async filterAndEnrichTokens(tokens) {
+  async filterForDisplay(tokens) {
     const filtered = new Map();
     
     for (const [address, token] of tokens) {
@@ -540,11 +528,6 @@ class TokenDiscovery {
         continue;
       }
       
-      // Skip zero balance
-      if (token.balance <= 0n) {
-        continue;
-      }
-      
       // Estimate value
       const estimatedValue = await this.estimateTokenValue(
         token.address,
@@ -552,22 +535,17 @@ class TokenDiscovery {
         token.decimals
       );
       
-      // Include all tokens with value <= $5 (including zero price tokens)
-      if (estimatedValue.estimatedUSD <= 5) {
-        filtered.set(address, {
-          ...token,
-          estimatedUSD: estimatedValue.estimatedUSD || 0,
-          estimatedPRGX: estimatedValue.estimatedPRGX || 0
-        });
-      }
+      // Include ALL tokens (even with 0 balance) for comprehensive discovery
+      filtered.set(address, {
+        ...token,
+        estimatedUSD: estimatedValue.estimatedUSD || 0,
+        estimatedPRGX: estimatedValue.estimatedPRGX || 0
+      });
     }
     
     return filtered;
   }
 
-  // ================================================================
-  // ESTIMATE TOKEN VALUE
-  // ================================================================
   async estimateTokenValue(address, balance, decimals) {
     try {
       // For tokens with no price data, assume dust value ($0.001 per token)
@@ -587,15 +565,25 @@ class TokenDiscovery {
     }
   }
 
-  // ================================================================
-  // SORT TOKENS BY VALUE
-  // ================================================================
-  sortTokensByValue(tokens) {
+  sortTokensByRelevance(tokens) {
     const sorted = new Map();
     const sortedEntries = Array.from(tokens.entries()).sort((a, b) => {
+      // Sort by: balance > 0 first, then by USD value, then by symbol
+      const aHasBalance = a[1].balance > 0n ? 1 : 0;
+      const bHasBalance = b[1].balance > 0n ? 1 : 0;
+      
+      if (aHasBalance !== bHasBalance) {
+        return bHasBalance - aHasBalance;
+      }
+      
       const valueA = a[1].estimatedUSD || 0;
       const valueB = b[1].estimatedUSD || 0;
-      return valueB - valueA; // Descending order
+      
+      if (valueA !== valueB) {
+        return valueB - valueA;
+      }
+      
+      return a[1].symbol.localeCompare(b[1].symbol);
     });
     
     for (const [address, token] of sortedEntries) {
@@ -606,227 +594,135 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // RENDER TOKEN TABLE
+  // UI HELPERS
   // ================================================================
-  renderTokenTable(tokens, containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
+  updateDiscoveryStatus(message, progress) {
+    this.discoveryProgress = progress;
     
-    // Clear existing content
-    container.innerHTML = '';
+    const statusElement = document.getElementById('discoveryStatus');
+    const progressBar = document.getElementById('discoveryProgress');
     
-    if (this.isDiscovering) {
-      // Show skeleton loading
-      for (let i = 0; i < 5; i++) {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td><div class="skeleton skeleton-row"></div></td>
-          <td><div class="skeleton skeleton-row"></div></td>
-          <td><div class="skeleton skeleton-row"></div></td>
-          <td><div class="skeleton skeleton-row"></div></td>
-          <td><div class="skeleton skeleton-row"></div></td>
-        `;
-        container.appendChild(row);
-      }
-      return;
+    if (statusElement) {
+      statusElement.textContent = message;
     }
+    
+    if (progressBar) {
+      progressBar.style.width = `${progress}%`;
+    }
+    
+    console.log(`[TokenDiscovery] ${progress}% - ${message}`);
+  }
+
+  renderTokenTable(tokens) {
+    const tokenTableBody = document.getElementById('tokenTableBody');
+    if (!tokenTableBody) return;
+    
+    tokenTableBody.innerHTML = '';
     
     if (tokens.size === 0) {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-3);">
-          No dust tokens found in your wallet
+          No tokens found in your wallet
         </td>
       `;
-      container.appendChild(row);
+      tokenTableBody.appendChild(row);
       return;
     }
     
-    // Render each token
     for (const [address, token] of tokens) {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>
-          <div class="checkbox-custom ${this.selectedTokens.has(address) ? 'checked' : ''}" 
-               data-token="${address}" onclick="tokenDiscovery.toggleToken('${address}')">
-            ${this.selectedTokens.has(address) ? '✓' : ''}
-          </div>
+          <input type="checkbox" class="token-checkbox" data-token="${address}" 
+                 ${token.balance > 0n ? '' : 'disabled'}>
         </td>
         <td>
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="token-icon">${token.symbol.slice(0, 2).toUpperCase()}</div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="token-icon" style="width: 24px; height: 24px; border-radius: 50%; background: var(--bg-card); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">
+              ${token.symbol.slice(0, 2)}
+            </div>
             <div>
-              <div class="token-symbol">${token.symbol}</div>
-              <div class="token-name">${token.name}</div>
+              <div style="font-weight: 500;">${token.symbol}</div>
+              <div style="font-size: 0.8rem; color: var(--text-3);">${token.name}</div>
             </div>
           </div>
         </td>
-        <td class="mono">${parseFloat(token.balanceFormatted).toLocaleString()}</td>
-        <td class="mono">$${(token.estimatedUSD || 0).toFixed(6)}</td>
-        <td class="mono">${(token.estimatedPRGX || 0).toFixed(2)} PRGX</td>
+        <td class="mono">
+          ${parseFloat(token.balanceFormatted).toFixed(4)}
+        </td>
+        <td>
+          $${token.estimatedUSD.toFixed(6)}
+        </td>
+        <td>
+          ${token.estimatedPRGX.toFixed(2)} PRGX
+        </td>
       `;
-      container.appendChild(row);
-    }
-  }
-
-  // ================================================================
-  // TOKEN SELECTION
-  // ================================================================
-  toggleToken(address) {
-    if (this.selectedTokens.has(address)) {
-      this.selectedTokens.delete(address);
-    } else {
-      this.selectedTokens.add(address);
+      tokenTableBody.appendChild(row);
     }
     
-    // Update checkbox
-    const checkbox = document.querySelector(`.checkbox-custom[data-token="${address}"]`);
-    if (checkbox) {
-      checkbox.classList.toggle('checked');
-      checkbox.textContent = this.selectedTokens.has(address) ? '✓' : '';
-    }
+    // Add event listeners to checkboxes
+    const checkboxes = tokenTableBody.querySelectorAll('.token-checkbox');
+    checkboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', () => this.updateSweepButton());
+    });
     
-    // Update sweep summary
-    this.updateSweepSummary();
+    // Initial sweep button update
+    this.updateSweepButton();
   }
 
   selectAll() {
-    for (const address of this.discoveredTokens.keys()) {
-      this.selectedTokens.add(address);
-    }
-    this.renderTokenTable(this.discoveredTokens, 'tokenTableBody');
-    this.updateSweepSummary();
+    const checkboxes = document.querySelectorAll('.token-checkbox:not(:disabled)');
+    checkboxes.forEach(checkbox => checkbox.checked = true);
+    this.updateSweepButton();
   }
 
   deselectAll() {
-    this.selectedTokens.clear();
-    this.renderTokenTable(this.discoveredTokens, 'tokenTableBody');
-    this.updateSweepSummary();
+    const checkboxes = document.querySelectorAll('.token-checkbox');
+    checkboxes.forEach(checkbox => checkbox.checked = false);
+    this.updateSweepButton();
   }
 
-  // ================================================================
-  // SWEEP SUMMARY UPDATES
-  // ================================================================
-  updateSweepSummary() {
-    const selectedCount = document.getElementById('selectedCount');
-    const estimatedPRGX = document.getElementById('estimatedPRGX');
-    const estimatedUSD = document.getElementById('estimatedUSD');
-    const purgeBtn = document.getElementById('purgeBtn');
+  updateSweepButton() {
+    const selectedCheckboxes = document.querySelectorAll('.token-checkbox:checked');
+    const sweepBtn = document.getElementById('sweepBtn');
     
-    if (!selectedCount || !estimatedPRGX || !estimatedUSD || !purgeBtn) return;
+    if (sweepBtn) {
+      sweepBtn.disabled = selectedCheckboxes.length === 0;
+      sweepBtn.textContent = selectedCheckboxes.length > 0 
+        ? `🧹 Sweep ${selectedCheckboxes.length} Tokens` 
+        : '🧹 Select Tokens to Sweep';
+    }
+  }
+
+  getSelectedTokens() {
+    const selectedCheckboxes = document.querySelectorAll('.token-checkbox:checked');
+    const selectedTokens = new Map();
     
-    selectedCount.textContent = this.selectedTokens.size;
-    
-    let totalPRGX = 0;
-    let totalUSD = 0;
-    
-    for (const address of this.selectedTokens) {
-      const token = this.discoveredTokens.get(address);
+    selectedCheckboxes.forEach(checkbox => {
+      const tokenAddress = checkbox.dataset.token;
+      const token = this.discoveredTokens.get(tokenAddress);
       if (token) {
-        totalPRGX += token.estimatedPRGX;
-        totalUSD += token.estimatedUSD;
+        selectedTokens.set(tokenAddress, token);
       }
-    }
+    });
     
-    estimatedPRGX.textContent = totalPRGX.toFixed(2);
-    estimatedUSD.textContent = `$${totalUSD.toFixed(6)}`;
-    
-    // Enable/disable purge button
-    purgeBtn.disabled = this.selectedTokens.size === 0;
+    return selectedTokens;
   }
 
   // ================================================================
-  // UI HELPERS
+  // PUBLIC API
   // ================================================================
-  updateDiscoveryStatus(message, progress) {
-    const status = document.getElementById('discoveryStatus');
-    if (!status) return;
-    
-    this.discoveryProgress = progress;
-    
-    if (this.isDiscovering) {
-      status.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <div class="glow-dot"></div>
-          <span>${message}</span>
-          <span style="color: var(--text-3);">(${progress}%)</span>
-        </div>
-        <div class="progress-bar" style="margin-top: 10px;">
-          <div class="progress-fill" style="width: ${progress}%"></div>
-        </div>
-      `;
-    } else {
-      status.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <span>${message}</span>
-          <button class="btn-icon" onclick="tokenDiscovery.refreshTokens()">↻</button>
-        </div>
-      `;
-    }
+  getDiscoveredTokens() {
+    return this.discoveredTokens;
   }
 
-  async refreshTokens() {
-    if (!window.wallet?.isConnected) return;
-    
-    try {
-      this.updateDiscoveryStatus('Refreshing tokens...', 0);
-      await this.getWalletTokens(window.wallet.address);
-      this.renderTokenTable(this.discoveredTokens, 'tokenTableBody');
-      this.updateSweepSummary();
-      this.updateDiscoveryStatus(`Found ${this.discoveredTokens.size} dust tokens`, 100);
-    } catch (error) {
-      console.error('Token refresh failed:', error);
-      this.updateDiscoveryStatus('Refresh failed - showing empty list', 0);
-      this.discoveredTokens.clear();
-      this.renderTokenTable(this.discoveredTokens, 'tokenTableBody');
-      window.wallet.showToast('Failed to refresh tokens', 'error');
-    }
+  isCurrentlyDiscovering() {
+    return this.isDiscovering;
   }
 
-  async addCustomToken(address) {
-    if (!window.wallet?.isConnected) return;
-    
-    try {
-      // Validate address
-      if (!ethers.isAddress(address)) {
-        throw new Error('Invalid token address');
-      }
-      
-      // Check if already discovered
-      if (this.discoveredTokens.has(address.toLowerCase())) {
-        throw new Error('Token already discovered');
-      }
-      
-      // Fetch balance and metadata
-      const balances = await this.batchFetchBalances([address], window.wallet.address);
-      const balance = balances[address] || 0n;
-      
-      if (balance <= 0n) {
-        throw new Error('No balance found for this token');
-      }
-      
-      const metadata = await this.fetchTokenMetadata(address);
-      const estimatedValue = await this.estimateTokenValue(address, balance, metadata.decimals);
-      
-      const token = {
-        address: address,
-        ...metadata,
-        balance: balance,
-        balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
-        estimatedUSD: estimatedValue,
-        estimatedPRGX: window.priceOracle ? 
-          window.priceOracle.usdToPRGX(estimatedValue) : 0,
-        source: 'custom'
-      };
-      
-      this.discoveredTokens.set(address.toLowerCase(), token);
-      this.renderTokenTable(this.discoveredTokens, 'tokenTableBody');
-      
-      window.wallet.showToast('Token added successfully', 'success');
-    } catch (error) {
-      console.error('Add custom token failed:', error);
-      window.wallet.showToast(error.message, 'error');
-    }
+  getDiscoveryProgress() {
+    return this.discoveryProgress;
   }
 }
 
