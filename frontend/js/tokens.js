@@ -63,6 +63,27 @@ class TokenDiscovery {
   }
 
   // ================================================================
+  // UTILITY LOGGING METHODS
+  // ================================================================
+  
+  log(level, ...args) {
+    const prefix = `[TokenDiscovery:${level.toUpperCase()}]`;
+    if (level === 'error' || level === 'warn') {
+      console[level](prefix, ...args);
+    } else if (level === 'info' || level === 'debug') {
+      if (window.DEBUG_TOKEN_DISCOVERY) {
+        console[level](prefix, ...args);
+      }
+    }
+  }
+
+  logError(context, error) {
+    this.stats.errors++;
+    this.discoveryErrors.push({ phase: context, error, message: error.message, stack: error.stack });
+    console.error(`[TokenDiscovery] ${context}:`, error.message);
+  }
+
+  // ================================================================
   // PUBLIC API
   // ================================================================
   
