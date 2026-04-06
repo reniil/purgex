@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PurgeX Token Discovery - Test Suite</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #e0e0e0;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 10px;
+        }
+        
+        .header h1 {
+            color: #00d4ff;
+            margin: 0;
+        }
+        
+        .header p {
+            color: #888;
+            margin-top: 10px;
+        }
+        
+        .section {
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .section h2 {
+            color: #00d4ff;
+            margin-top: 0;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        
+        .test-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #00d4ff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #00b8e6;
+            transform: translateY(-1px);
+        }
+        
+        button:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status-box {
+            background: #0f0f1a;
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .progress-bar {
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff 0%, #00ff88 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: #0f0f1a;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .token-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .token-table th {
+            background: #16213e;
+            color: #00d4ff;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 12px;
+            border-bottom: 2px solid #333;
+        }
+        
+        .token-table td {
+            padding: 12px;
+            border-bottom: 1px solid #333;
+        }
+        
+        .token-table tr:hover {
+            background: #0f0f1a;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-success {
+            background: #00ff88;
+            color: #000;
+        }
+        
+        .badge-warning {
+            background: #ffaa00;
+            color: #000;
+        }
+        
+        .badge-error {
+            background: #ff4444;
+            color: #fff;
+        }
+        
+        .badge-info {
+            background: #00d4ff;
+            color: #000;
+        }
+        
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+            border-bottom: 1px solid #222;
+        }
+        
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        
+        .log-timestamp {
+            color: #888;
+            margin-right: 10px;
+        }
+        
+        .log-level {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .log-level.INFO { color: #00d4ff; }
+        .log-level.DEBUG { color: #888; }
+        .log-level.WARN { color: #ffaa00; }
+        .log-level.ERROR { color: #ff4444; }
+        
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        
+        .config-item {
+            background: #0f0f1a;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #333;
+        }
+        
+        .config-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .config-value {
+            font-size: 14px;
+            color: #00d4ff;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧹 PurgeX Token Discovery Test Suite</h1>
+        <p>Testing improved token discovery implementation for PulseChain</p>
+    </div>
+    
+    <div class="section">
+        <h2>📊 Real-Time Discovery Status</h2>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressBar"></div>
+        </div>
+        
+        <div class="status-box" id="statusMessage">
+            Ready to start token discovery...
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="rpccalls">0</div>
+                <div class="stat-label">RPC Calls</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="cachehits">0</div>
+                <div class="stat-label">Cache Hits</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="retries">0</div>
+                <div class="stat-label">Retries</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="errors">0</div>
+                <div class="stat-label">Errors</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="tokensfound">0</div>
+                <div class="stat-label">Tokens Found</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="duration">0ms</div>
+                <div class="stat-label">Duration</div>
+            </div>
+        </div>
+        
+        <div class="test-controls">
+            <button id="startBtn">🚀 Start Discovery</button>
+            <button id="stopBtn" disabled>⏹️ Stop</button>
+            <button id="clearLogBtn">🗑️ Clear Log</button>
+            <button id="cacheStatsBtn">📈 Cache Stats</button>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>⚙️ Configuration</h2>
+        <div class="config-grid" id="configGrid">
+            <!-- Will be populated by JS -->
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>🔍 Discovery Log</h2>
+        <div class="status-box" id="logBox" style="max-height: 300px;">
+            <div class="log-entry">
+                <span class="log-timestamp">[Ready]</span>
+                <span class="log-level INFO">INFO</span>
+                Token discovery test suite v2.0 loaded
+            </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>💰 Discovered Tokens</h2>
+        <div id="tokenSection">
+            <p style="color: #888; text-align: center; padding: 20px;">
+                No tokens discovered yet. Click "Start Discovery" to begin.
+            </p>
+        </div>
+    </div>
+
+    <!-- Include ethers.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    
+    <!-- Load config and token discovery modules -->
+    <script src="../js/config.js"></script>
+    <script src="tokens.js"></script>
+    
+    <script>
+        // Test suite for token discovery
+        class TokenDiscoveryTest {
+            constructor() {
+                this.elements = {
+                    progressBar: document.getElementById('progressBar'),
+                    statusMessage: document.getElementById('statusMessage'),
+                    logBox: document.getElementById('logBox'),
+                    tokenSection: document.getElementById('tokenSection'),
+                    startBtn: document.getElementById('startBtn'),
+                    stopBtn: document.getElementById('stopBtn'),
+                    clearLogBtn: document.getElementById('clearLogBtn'),
+                    cacheStatsBtn: document.getElementById('cacheStatsBtn'),
+                    configGrid: document.getElementById('configGrid'),
+                    stats: {
+                        rpccalls: document.getElementById('rpccalls'),
+                        cachehits: document.getElementById('cachehits'),
+                        retries: document.getElementById('retries'),
+                        errors: document.getElementById('errors'),
+                        tokensfound: document.getElementById('tokensfound'),
+                        duration: document.getElementById('duration')
+                    }
+                };
+                
+                this.discoveryPromise = null;
+                this.originalUpdateStatus = window.tokenDiscovery.updateDiscoveryStatus.bind(window.tokenDiscovery);
+                this.originalLog = window.tokenDiscovery.log.bind(window.tokenDiscovery);
+                
+                this.init();
+            }
+            
+            init() {
+                // Override discovery methods to capture data
+                window.tokenDiscovery.updateDiscoveryStatus = (msg, progress) => {
+                    this.elements.statusMessage.textContent = msg;
+                    this.elements.progressBar.style.width = `${progress}%`;
+                    this.originalUpdateStatus(msg, progress);
+                };
+                
+                window.tokenDiscovery.log = (level, ...args) => {
+                    this.addLog(level, args);
+                    this.originalLog(level, ...args);
+                };
+                
+                // Setup event listeners
+                this.elements.startBtn.addEventListener('click', () => this.startDiscovery());
+                this.elements.stopBtn.addEventListener('click', () => this.stopDiscovery());
+                this.elements.clearLogBtn.addEventListener('click', () => this.clearLog());
+                this.elements.cacheStatsBtn.addEventListener('click', () => this.showCacheStats());
+                
+                // Display configuration
+                this.displayConfig();
+                
+                // Start stats update interval
+                setInterval(() => this.updateStats(), 500);
+            }
+            
+            async startDiscovery() {
+                if (this.discoveryPromise) return;
+                
+                // Connect wallet first if not connected
+                if (!window.wallet || !window.wallet.provider) {
+                    this.addLog('warn', 'No wallet connected. Please connect your wallet first.');
+                    alert('Please connect your wallet to the PulseChain network first.');
+                    return;
+                }
+                
+                const address = window.wallet.address;
+                if (!address) {
+                    this.addLog('error', 'No wallet address found');
+                    return;
+                }
+                
+                this.elements.startBtn.disabled = true;
+                this.elements.stopBtn.disabled = false;
+                this.clearLog();
+                this.addLog('info', `Starting discovery for wallet: ${address}`);
+                
+                try {
+                    this.discoveryPromise = window.tokenDiscovery.discoverTokens(address);
+                    const tokens = await this.discoveryPromise;
+                    
+                    this.displayTokens(tokens);
+                    this.addLog('info', `Discovery completed: ${tokens.size} tokens found`);
+                    
+                } catch (error) {
+                    this.addLog('error', 'Discovery failed:', error);
+                } finally {
+                    this.discoveryPromise = null;
+                    this.elements.startBtn.disabled = false;
+                    this.elements.stopBtn.disabled = true;
+                }
+            }
+            
+            stopDiscovery() {
+                if (this.discoveryPromise) {
+                    // Note: The current implementation doesn't support cancellation
+                    // This is a placeholder for future implementation
+                    this.addLog('warn', 'Stop requested - current discovery will continue to completion');
+                    this.discoveryPromise = null;
+                    this.elements.startBtn.disabled = false;
+                    this.elements.stopBtn.disabled = true;
+                }
+            }
+            
+            displayConfig() {
+                const config = window.tokenDiscovery.config;
+                const items = [
+                    { label: 'Max Block Range', value: config.maxBlockRange },
+                    { label: 'Initial Batch Size', value: config.initialBatchSize },
+                    { label: 'Max Batch Size', value: config.maxBatchSize },
+                    { label: 'Min Batch Size', value: config.minBatchSize },
+                    { label: 'Retry Delay (ms)', value: config.retryDelay },
+                    { label: 'Max Retries', value: config.maxRetries },
+                    { label: 'Timeout (ms)', value: config.timeout },
+                    { label: 'Transfer Window', value: config.transferEventWindow },
+                    { label: 'Cache TTL', value: `${config.cacheTTL / 60000} min` },
+                    { label: 'PulseX Pair Limit', value: config.pulseXPairLimit }
+                ];
+                
+                this.elements.configGrid.innerHTML = items.map(item => `
+                    <div class="config-item">
+                        <div class="config-label">${item.label}</div>
+                        <div class="config-value">${item.value}</div>
+                    </div>
+                `).join('');
+            }
+            
+            displayTokens(tokens) {
+                if (tokens.size === 0) {
+                    this.elements.tokenSection.innerHTML = `
+                        <p style="color: #888; text-align: center; padding: 20px;">
+                            No tokens found in your wallet
+                        </p>
+                    `;
+                    return;
+                }
+                
+                const rows = Array.from(tokens.entries()).map(([address, token]) => `
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #00d4ff, #00ff88); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px;">
+                                    ${token.symbol.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                    <div style="font-weight: 600; color: #00d4ff;">${token.symbol}</div>
+                                    <div style="font-size: 12px; color: #888;">${token.name}</div>
+                                    <div style="font-size: 10px; color: #666; font-family: monospace;">${address.slice(0, 10)}...${address.slice(-8)}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="mono" style="text-align: right;">
+                            ${parseFloat(token.balanceFormatted).toFixed(4)}
+                        </td>
+                        <td class="mono" style="text-align: right; color: ${token.estimatedUSD > 0 ? '#00ff88' : '#888'};">
+                            $${token.estimatedUSD.toFixed(4)}
+                        </td>
+                        <td class="mono" style="text-align: right;">
+                            ${token.estimatedPRGX.toFixed(2)}
+                        </td>
+                        <td>
+                            <span class="badge ${this.getSourceBadgeClass(token.source)}">
+                                ${token.source}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('');
+                
+                this.elements.tokenSection.innerHTML = `
+                    <table class="token-table">
+                        <thead>
+                            <tr>
+                                <th>Token</th>
+                                <th style="text-align: right;">Balance</th>
+                                <th style="text-align: right;">Est. USD</th>
+                                <th style="text-align: right;">Est. PRGX</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            }
+            
+            getSourceBadgeClass(source) {
+                const classes = {
+                    'aggressive-scan': 'badge-info',
+                    'limited-scan': 'badge-info',
+                    'pulsex-pairs': 'badge-success',
+                    'known-pulsechain': 'badge-warning',
+                    'transfer-events': 'badge-warning',
+                    'discovery': 'badge-info'
+                };
+                return classes[source] || 'badge-info';
+            }
+            
+            addLog(level, args) {
+                const timestamp = new Date().toLocaleTimeString();
+                const message = args.map(arg => 
+                    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+                ).join(' ');
+                
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                logEntry.innerHTML = `
+                    <span class="log-timestamp">[${timestamp}]</span>
+                    <span class="log-level ${level.toUpperCase()}">${level.toUpperCase()}</span>
+                    <span class="log-message">${message}</span>
+                `;
+                
+                this.elements.logBox.appendChild(logEntry);
+                this.elements.logBox.scrollTop = this.elements.logBox.scrollHeight;
+            }
+            
+            clearLog() {
+                this.elements.logBox.innerHTML = '';
+            }
+            
+            updateStats() {
+                if (!window.tokenDiscovery) return;
+                
+                const stats = window.tokenDiscovery.getStats();
+                const tokens = window.tokenDiscovery.getDiscoveredTokens();
+                
+                this.elements.stats.rpccalls.textContent = stats.rpcCalls;
+                this.elements.stats.cachehits.textContent = stats.cacheHits;
+                this.elements.stats.retries.textContent = stats.retries;
+                this.elements.stats.errors.textContent = stats.errors;
+                this.elements.stats.tokensfound.textContent = tokens ? tokens.size : 0;
+                this.elements.stats.duration.textContent = `${stats.durationMs}ms`;
+            }
+            
+            showCacheStats() {
+                if (!window.tokenDiscovery) return;
+                
+                const cache = window.tokenDiscovery.cache;
+                const cacheSize = cache.size;
+                const now = Date.now();
+                
+                let statsHtml = `
+                    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                                background: #1a1a2e; border: 2px solid #00d4ff; border-radius: 10px; 
+                                padding: 30px; z-index: 1000; max-width: 600px; max-height: 80vh; 
+                                overflow-y: auto;">
+                        <h3 style="color: #00d4ff; margin-top: 0;">📊 Cache Statistics</h3>
+                        <p><strong>Total Entries:</strong> ${cacheSize}</p>
+                        <p><strong>TTL:</strong> ${window.tokenDiscovery.config.cacheTTL / 60000} minutes</p>
+                        <h4 style="color: #888; margin-bottom: 10px;">Recent Entries (last 10):</h4>
+                        <ul style="color: #00ff88; font-size: 12px; padding-left: 20px;">
+                `;
+                
+                let count = 0;
+                for (const [key, entry] of cache.entries()) {
+                    if (count++ >= 10) break;
+                    const age = Math.round((now - entry.expires + window.tokenDiscovery.config.cacheTTL) / 60000);
+                    statsHtml += `<li>${key} (${age}m old)</li>`;
+                }
+                
+                statsHtml += `
+                        </ul>
+                        <button onclick="this.parentElement.remove()" style="margin-top: 20px;">
+                            Close
+                        </button>
+                    </div>
+                `;
+                
+                const overlay = document.createElement('div');
+                overlay.style.cssText = `
+                    position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+                    background: rgba(0,0,0,0.8); z-index: 999;
+                `;
+                overlay.onclick = () => overlay.remove();
+                overlay.innerHTML = statsHtml;
+                document.body.appendChild(overlay);
+            }
+        }
+        
+        // Initialize test suite when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            window.tokenDiscoveryTest = new TokenDiscoveryTest();
+        });
+    </script>
+</body>
+</html>
