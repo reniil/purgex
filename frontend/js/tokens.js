@@ -31,8 +31,8 @@ class TokenDiscovery {
       // Circuit breaker
       circuitBreakerThreshold: 3,
       circuitBreakerPause: 3000,
-      // Dust threshold (tokens with balance < this are ignored)
-      dustThreshold: 1n, // Include all tokens, filter later by value
+      // Dust threshold - set to 0 to include ALL tokens (filter later by UI)
+      dustThreshold: 0n,
       // Concurrency
       maxConcurrent: 2 // Conservative for PulseChain
     };
@@ -252,16 +252,10 @@ class TokenDiscovery {
   isExcludedToken(addr) {
     if (!addr) return false;
     const lower = addr.toLowerCase();
-    // Safely get config values with defaults
-    const prgx = CONFIG?.CONTRACTS?.PRGX_TOKEN ? CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase() : null;
-    const wpls = CONFIG?.CONTRACTS?.WPLS ? CONFIG.CONTRACTS.WPLS.toLowerCase() : null;
-    
+    // Only exclude the native token (PLS) - keep all ERC-20s including PRGX and WPLS
     const excluded = [
-      prgx,
-      wpls,
-      '0x0000000000000000000000000000000000000000' // Native token
-    ].filter(x => x);
-    
+      '0x0000000000000000000000000000000000000000' // Native token (PLS)
+    ];
     return excluded.includes(lower);
   }
   
