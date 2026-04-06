@@ -691,7 +691,10 @@ class TokenDiscovery {
   }
 
   padAddress(addr) {
-    return ethers.zeroPadValue(addr.toLowerCase(), 32);
+    // Returns 32-byte hex string WITHOUT 0x prefix for calldata concatenation
+    const padded = ethers.zeroPadValue(addr.toLowerCase(), 32);
+    // ethers returns hex with 0x prefix - strip it
+    return padded.startsWith('0x') ? padded.slice(2) : padded;
   }
 
   toHex(num) {
