@@ -216,42 +216,6 @@ class PriceOracle {
   }
 
   // ================================================================
-  // FETCH TOKEN PRICE — Generic token price lookup
-  // ================================================================
-  async fetchTokenPrice(tokenAddress) {
-    try {
-      const response = await fetch(
-        `${CONFIG.APIS.DEXSCREENER_BASE}/${tokenAddress}`
-      );
-      
-      if (!response.ok) {
-        throw new Error('Token price fetch failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data.pairs && data.pairs.length > 0) {
-        const pair = data.pairs[0];
-        if (pair.priceUsd) {
-          return parseFloat(pair.priceUsd);
-        }
-      }
-      
-      throw new Error('No token price data found');
-    } catch (error) {
-      console.warn(`Token price fetch failed for ${tokenAddress}:`, error.message);
-      return 0;
-    }
-  }
-  
-  // Synchronous price getter with cache
-  getTokenPrice(tokenAddress) {
-    // Check cache first (we'll need to implement cache)
-    // For now return 0 and let async fetch populate
-    return 0;
-  }
-
-  // ================================================================
   // AUTO-REFRESH
   // ================================================================
   startAutoRefresh() {
