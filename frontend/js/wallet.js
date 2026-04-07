@@ -76,12 +76,8 @@ class WalletManager {
         throw new Error('No accounts found');
       }
       
-      // Setup provider with ENS disabled for PulseChain
-      this.provider = new ethers.BrowserProvider(wallet.provider, {
-        name: 'pulsechain',
-        chainId: 369,
-        ensAddress: null // Disable ENS
-      });
+      // Setup provider
+      this.provider = new ethers.BrowserProvider(wallet.provider);
       const signer = await this.provider.getSigner();
       
       // Get network info

@@ -19,7 +19,7 @@ const CONFIG = {
     explorer: 'https://scan.pulsechain.com',
     currency: { name: 'PLS', symbol: 'PLS', decimals: 18 },
   },
-  PULSEX_SWAP_URL: 'https://pulsex.mypinata.cloud/ipfs/bafybeidea3ibq4lu5t6vk6ihp4iuznjb3wtPrgxkardhmhnqtmcfpdp5m/#/?outputCurrency=0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0',
+  PULSEX_SWAP_URL: 'https://www.dextools.io/app/pulse/pair-explorer/0xc76f9b605a929a35f1a6d8b200630e84e27caaeb',
   REWARDS_PER_SECOND: 6.4,
   SWEEP_FEE_PERCENT: 5,
   PRICE_REFRESH_INTERVAL_MS: 30000,
@@ -29,6 +29,7 @@ const CONFIG = {
     DEXSCREENER_BASE: 'https://api.dexscreener.com/latest/dex/tokens',
     IPULSE_ROUTER: '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02',
     IPULSE_FACTORY: '0x43d7dA3090A2F0c8A0b8F9a5E3E4bA6F5E6E8E',
+    BLOCKSCOUT_BASE: 'https://api.scan.pulsechain.com/api/v2',
   }
 };
 
@@ -68,15 +69,25 @@ CONFIG.ABIS = {
 
   STAKING: [
     'function stake(uint256 amount) external',
-    'function unstake(uint256 amount) external',
-    'function claimRewards() external',
-    'function pendingRewards(address user) view returns (uint256)',
-    'function stakedBalance(address user) view returns (uint256)',
-    'function totalStaked() view returns (uint256)',
-    'function rewardRate() view returns (uint256)',
+    'function stakeAll() external',
+    'function withdraw(uint256 amount) external',
+    'function claimReward() external',
+    'function claimRewardFor(address _user) external',
+    'function pendingRewardsOf(address _user) view returns (uint256)',
+    'function getStakedBalance(address _user) view returns (uint256)',
+    'function getTotalStaked() view returns (uint256)',
+    'function getRewardRate() view returns (uint256)',
+    'function getRewardToken() view returns (address)',
+    'function availableRewardBalance() view returns (uint256)',
+    'function owner() view returns (address)',
+    'function paused() view returns (bool)',
+    'function pause() external',
+    'function unpause() external',
+    'function emergencyWithdraw() external',
     'event Staked(address indexed user, uint256 amount)',
-    'event Unstaked(address indexed user, uint256 amount)',
-    'event RewardsClaimed(address indexed user, uint256 amount)',
+    'event Withdrawn(address indexed user, uint256 amount)',
+    'event RewardPaid(address indexed user, address indexed token, uint256 amount)',
+    'event EmergencyWithdraw(address indexed user, uint256 amount)',
   ],
 
   PAIR: [
@@ -91,10 +102,7 @@ CONFIG.ABIS = {
 // ================================================================
 
 CONFIG.KNOWN_DUST_TOKENS = [
-  // Real PulseChain tokens with proper checksums
-  '0xA1077a294dDE1B09bB078844df40758a5D0f9a27', // WPLS
-  '0x02f26235791bf5e65a3253aa06845c0451237567', // PLS
-  '0x2b592e8c5c1b4f8b6e3b4c8e4b4c8e4b4c8e4b4c', // Example placeholder (will be skipped)
+  // This will be populated dynamically - no hardcoded tokens needed
 ];
 
 // ================================================================

@@ -35,25 +35,20 @@ class Sweeper {
   // GET SELECTED TOKENS FROM UI
   // ================================================================
   getSelectedTokens() {
-    // Use the token discovery's selectedTokens set
-    if (window.tokenDiscovery && window.tokenDiscovery.selectedTokens) {
-      const selectedTokens = Array.from(window.tokenDiscovery.selectedTokens);
-      console.log('Selected tokens from discovery:', selectedTokens);
-      return selectedTokens;
+    // Use the token discovery's getSelectedTokens method
+    if (window.tokenDiscovery) {
+      const selected = window.tokenDiscovery.getSelectedTokens();
+      const addresses = Array.from(selected.keys());
+      console.log('Selected tokens:', addresses);
+      return addresses;
     }
     
     // Fallback: try to read from DOM
-    const checkedDivs = document.querySelectorAll('.checkbox-custom.checked[data-token]');
+    const checkedBoxes = document.querySelectorAll('.token-checkbox:checked');
     const selectedTokens = [];
     
-    checkedDivs.forEach(div => {
-      selectedTokens.push(div.dataset.token);
-    });
-    
-    // Also check for input checkboxes (fallback)
-    const inputCheckboxes = document.querySelectorAll('input[data-token]:checked');
-    inputCheckboxes.forEach(checkbox => {
-      if (!selectedTokens.includes(checkbox.dataset.token)) {
+    checkedBoxes.forEach(checkbox => {
+      if (checkbox.dataset.token) {
         selectedTokens.push(checkbox.dataset.token);
       }
     });

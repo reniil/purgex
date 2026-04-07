@@ -37,46 +37,40 @@ class PriceOracle {
   }
 
   async _fetchPRGXPriceInternal() {
-    console.log('🔍 Starting PRGX price fetch...');
-    
     // SOURCE 1: RouteScan API
     try {
-      console.log('📡 Attempting RouteScan API...');
       const price = await this.fetchFromRouteScan();
       if (price > 0) {
-        console.log('✅ PRGX price from RouteScan:', price);
+        console.log('PRGX price from RouteScan:', price);
         return price;
       }
     } catch (error) {
-      console.warn('⚠️ RouteScan price fetch failed:', error.message);
+      console.warn('RouteScan price fetch failed:', error);
     }
     
     // SOURCE 2: DEXScreener API
     try {
-      console.log('📡 Attempting DEXScreener API...');
       const price = await this.fetchFromDexScreener();
       if (price > 0) {
-        console.log('✅ PRGX price from DEXScreener:', price);
+        console.log('PRGX price from DEXScreener:', price);
         return price;
       }
     } catch (error) {
-      console.warn('⚠️ DEXScreener price fetch failed:', error.message);
+      console.warn('DEXScreener price fetch failed:', error);
     }
     
     // SOURCE 3: Calculate from LP reserves
     try {
-      console.log('📡 Attempting LP calculation...');
       const price = await this.calculateFromLP();
       if (price > 0) {
-        console.log('✅ PRGX price from LP calculation:', price);
+        console.log('PRGX price from LP calculation:', price);
         return price;
       }
     } catch (error) {
-      console.warn('⚠️ LP calculation failed:', error.message);
+      console.warn('LP calculation failed:', error);
     }
     
     // All sources failed
-    console.error('❌ All price sources failed');
     throw new Error('Unable to fetch PRGX price from any source');
   }
 
@@ -219,6 +213,42 @@ class PriceOracle {
       console.warn('WPLS price fetch failed:', error);
       return 0;
     }
+  }
+
+  // ================================================================
+  // FETCH TOKEN PRICE — Generic token price lookup
+  // ================================================================
+  async fetchTokenPrice(tokenAddress) {
+    try {
+      const response = await fetch(
+        `${CONFIG.APIS.DEXSCREENER_BASE}/${tokenAddress}`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Token price fetch failed');
+      }
+      
+      const data = await response.json();
+      
+      if (data.pairs && data.pairs.length > 0) {
+        const pair = data.pairs[0];
+        if (pair.priceUsd) {
+          return parseFloat(pair.priceUsd);
+        }
+      }
+      
+      throw new Error('No token price data found');
+    } catch (error) {
+      console.warn(`Token price fetch failed for ${tokenAddress}:`, error.message);
+      return 0;
+    }
+  }
+  
+  // Synchronous price getter with cache
+  getTokenPrice(tokenAddress) {
+    // Check cache first (we'll need to implement cache)
+    // For now return 0 and let async fetch populate
+    return 0;
   }
 
   // ================================================================

@@ -1,585 +1,144 @@
-// ================================================================
-// APP INITIALIZATION — Main app entry point
-// ================================================================
+/**
+ * PurgeX DEX - Main Application
+ * Client-side token indexer and DEX interface
+ */
+
+import { storage } from './storage.js';
+import { api } from './api.js';
+import { search } from './search.js';
+import { ui } from './ui.js';
 
 class App {
   constructor() {
-    this.isInitialized = false;
-    this.modules = new Map();
+    this.initialized = false;
+    this.refreshInterval = null;
+    this.REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
   }
 
-  // ================================================================
-  // INITIALIZE APPLICATION
-  // ================================================================
   async init() {
-    if (this.isInitialized) return;
-    
+    console.log('🚀 Initializing PurgeX DEX...');
+
     try {
-      console.log('🚀 Initializing PurgeX application...');
+      // 1. Initialize IndexedDB
+      await storage.init();
+      console.log('✅ Storage initialized');
+
+      // 2. Load initial token data
+      const tokenCount = await this.loadOrFetchTokens();
       
-      // 1. Initialize router first
-      this.modules.set('router', window.router);
-      window.router.init();
+      // 3. Initialize UI
+      ui.loadTokens();
+      ui.updateStorageUsed();
       
-      // 2. Initialize price oracle and start price fetching
-      this.modules.set('priceOracle', window.priceOracle);
-      window.priceOracle.startAutoRefresh();
+      // 4. Set up periodic refresh (every 5 minutes)
+      this.startPeriodicRefresh();
       
-      // 3. Initialize wallet and attempt auto-reconnect
-      this.modules.set('wallet', window.wallet);
-      await this.initializeWallet();
+      // 5. Register service worker (optional)
+      this.registerServiceWorker();
       
-      // 4. Setup global wallet event listeners
-      this.setupWalletEventListeners();
-      
-      // 5. Setup global UI event listeners
-      this.setupUIEventListeners();
-      
-      // 6. Setup global error handler
-      this.setupGlobalErrorHandler();
-      
-      // 7. Setup toast container
-      this.setupToastContainer();
-      
-      this.isInitialized = true;
-      console.log('✅ PurgeX application initialized successfully');
+      this.initialized = true;
+      console.log(`✅ Ready! ${tokenCount} tokens indexed`);
       
     } catch (error) {
-      console.error('❌ App initialization failed:', error);
-      this.showCriticalError(error.message);
+      console.error('❌ Failed to initialize:', error);
+      ui.showNotification('Failed to initialize app. Please refresh.', 'error');
     }
   }
 
-  // ================================================================
-  // INITIALIZE WALLET
-  // ================================================================
-  async initializeWallet() {
+  async loadOrFetchTokens() {
+    // Check if we already have tokens in storage
+    const existingTokens = await storage.getAllTokens();
+    
+    if (existingTokens.length > 0) {
+      console.log(`📦 Loaded ${existingTokens.length} tokens from local storage`);
+      return existingTokens.length;
+    }
+
+    // No tokens yet, fetch from API
+    console.log('📥 Fetching initial token list...');
     try {
-      // Attempt auto-reconnect
-      const reconnected = await window.wallet.autoReconnect();
+      const tokens = await api.fetchTokenList();
       
-      if (reconnected) {
-        console.log('✅ Wallet auto-reconnected');
-      } else {
-        console.log('ℹ️ No wallet auto-reconnection available');
+      if (tokens.length === 0) {
+        throw new Error('No tokens fetched from API');
       }
       
-      // Setup wallet listeners
-      window.wallet.addListener((event, data) => {
-        this.handleWalletEvent(event, data);
-      });
+      // Save to IndexedDB
+      await storage.saveTokensBatch(tokens);
+      console.log(`✅ Saved ${tokens.length} tokens to local storage`);
+      return tokens.length;
       
     } catch (error) {
-      console.warn('Wallet initialization warning:', error);
+      console.error('❌ Failed to fetch tokens:', error);
+      ui.showNotification('Failed to load tokens. Using sample data.', 'error');
+      
+      // Load sample data as fallback
+      await this.loadSampleData();
+      return 0;
     }
   }
 
-  // ================================================================
-  // SETUP WALLET EVENT LISTENERS
-  // ================================================================
-  setupWalletEventListeners() {
-    // Wallet button in navigation
-    const navWalletBtn = document.getElementById('navWalletBtn');
-    if (navWalletBtn) {
-      navWalletBtn.addEventListener('click', () => {
-        if (window.wallet.isConnected) {
-          window.wallet.disconnect();
-        } else {
-          window.wallet.connect();
-        }
-      });
-    }
-
-    // Mobile menu toggle
-    const hamburger = document.getElementById('hamburger');
-    const navbarLinks = document.getElementById('navbarLinks');
-    
-    if (hamburger && navbarLinks) {
-      hamburger.addEventListener('click', () => {
-        navbarLinks.classList.toggle('open');
-      });
-    }
-
-    // Close mobile menu when link is clicked
-    const navLinks = document.querySelectorAll('.nav-link');
-    navLinks.forEach(link => {
-      link.addEventListener('click', () => {
-        navbarLinks.classList.remove('open');
-      });
-    });
-  }
-
-  // ================================================================
-  // SETUP UI EVENT LISTENERS
-  // ================================================================
-  setupUIEventListeners() {
-    // Modal overlay click to close
-    const modalOverlay = document.getElementById('modalOverlay');
-    if (modalOverlay) {
-      modalOverlay.addEventListener('click', (e) => {
-        if (e.target === modalOverlay) {
-          modalOverlay.classList.add('hidden');
-        }
-      });
-    }
-
-    // Escape key to close modals
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const modalOverlay = document.getElementById('modalOverlay');
-        if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
-          modalOverlay.classList.add('hidden');
-        }
+  async loadSampleData() {
+    // Minimal sample data for demo purposes
+    const sampleTokens = [
+      {
+        address: '0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0',
+        name: 'PurgeX',
+        symbol: 'PRGX',
+        decimals: 18,
+        price: 8.75e-8,
+        volume24h: 0,
+        liquidity: 44600000,
+        lastUpdated: Date.now()
       }
-    });
+    ];
+    
+    await storage.saveTokensBatch(sampleTokens);
+  }
 
-    // Copy to clipboard functionality
-    document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('copy-btn')) {
-        this.copyToClipboard(e.target);
+  startPeriodicRefresh() {
+    // Refresh token list every 5 minutes
+    this.refreshInterval = setInterval(async () => {
+      try {
+        const count = await api.refreshTokenList();
+        console.log(`🔄 Background refresh: ${count} tokens updated`);
+      } catch (error) {
+        console.error('Background refresh failed:', error);
       }
-    });
+    }, this.REFRESH_INTERVAL_MS);
   }
 
-  // ================================================================
-  // SETUP GLOBAL ERROR HANDLER
-  // ================================================================
-  setupGlobalErrorHandler() {
-    window.addEventListener('error', (event) => {
-      console.error('Global error:', event.error);
-      this.showToast('An unexpected error occurred', 'error');
-    });
-
-    window.addEventListener('unhandledrejection', (event) => {
-      console.error('Unhandled promise rejection:', event.reason);
-      this.showToast('An unexpected error occurred', 'error');
-    });
-  }
-
-  // ================================================================
-  // SETUP TOAST CONTAINER
-  // ================================================================
-  setupToastContainer() {
-    const container = document.getElementById('toastContainer');
-    if (!container) {
-      console.warn('Toast container not found');
+  async registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        console.log('✅ Service Worker registered');
+      } catch (error) {
+        console.log('ℹ️ Service Worker registration skipped:', error.message);
+      }
     }
   }
 
-  // ================================================================
-  // WALLET EVENT HANDLER
-  // ================================================================
-  handleWalletEvent(event, data) {
-    switch (event) {
-      case 'connected':
-        console.log('Wallet connected:', data);
-        this.onWalletConnected(data);
-        break;
-      case 'disconnected':
-        console.log('Wallet disconnected');
-        this.onWalletDisconnected();
-        break;
-      case 'accountChanged':
-        console.log('Account changed:', data);
-        this.onAccountChanged(data);
-        break;
-      case 'chainChanged':
-        console.log('Chain changed:', data);
-        this.onChainChanged(data);
-        break;
+  stopPeriodicRefresh() {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
     }
-  }
-
-  // ================================================================
-  // WALLET EVENT CALLBACKS
-  // ================================================================
-  async onWalletConnected(data) {
-    // Update wallet UI immediately
-    window.wallet.updateAllWalletUI();
-    
-    // Refresh current page if it requires wallet
-    const currentRoute = window.router.getCurrentRoute();
-    if (currentRoute && currentRoute.requiresWallet) {
-      await window.router.handleRoute();
-    }
-    
-    this.showToast('Wallet connected successfully', 'success');
-  }
-
-  async onWalletDisconnected() {
-    // Navigate to home if on wallet-required page
-    const currentRoute = window.router.getCurrentRoute();
-    if (currentRoute && currentRoute.requiresWallet) {
-      window.router.navigate('/');
-    }
-    
-    this.showToast('Wallet disconnected', 'info');
-  }
-
-  async onAccountChanged(data) {
-    // Refresh current page to update with new account
-    await window.router.handleRoute();
-    this.showToast('Account changed', 'info');
-  }
-
-  async onChainChanged(data) {
-    // Refresh current page to update with new chain
-    await window.router.handleRoute();
-    
-    if (data.chainId === CONFIG.NETWORK.chainId) {
-      this.showToast('Switched to PulseChain', 'success');
-    } else {
-      this.showToast('Wrong network detected', 'warning');
-    }
-  }
-
-  // ================================================================
-  // UTILITY METHODS
-  // ================================================================
-  showToast(message, type = 'info') {
-    if (window.wallet && window.wallet.showToast) {
-      window.wallet.showToast(message, type);
-    } else {
-      console.log(`Toast (${type}): ${message}`);
-    }
-  }
-
-  async copyToClipboard(element) {
-    const textToCopy = element.dataset.copy || element.textContent;
-    
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      
-      // Show feedback
-      const originalText = element.textContent;
-      element.textContent = 'Copied!';
-      element.classList.add('success');
-      
-      setTimeout(() => {
-        element.textContent = originalText;
-        element.classList.remove('success');
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Copy to clipboard failed:', error);
-      this.showToast('Failed to copy to clipboard', 'error');
-    }
-  }
-
-  showCriticalError(message) {
-    const appContainer = document.getElementById('app');
-    if (!appContainer) return;
-    
-    appContainer.innerHTML = `
-      <div class="section">
-        <div class="container">
-          <div class="card" style="text-align: center; padding: 3rem; border-color: var(--red);">
-            <h3 style="color: var(--red); margin-bottom: 1rem;">Critical Error</h3>
-            <p style="color: var(--text-2); margin-bottom: 2rem;">
-              The application failed to initialize properly.
-            </p>
-            <p style="color: var(--text-3); font-family: var(--font-mono); margin-bottom: 2rem;">
-              ${message}
-            </p>
-            <button class="btn-primary" onclick="location.reload()">
-              Reload Application
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // ================================================================
-  // GET MODULE
-  // ================================================================
-  getModule(name) {
-    return this.modules.get(name);
-  }
-
-  // ================================================================
-  // CLEANUP
-  // ================================================================
-  cleanup() {
-    // Stop price oracle
-    if (window.priceOracle) {
-      window.priceOracle.cleanup();
-    }
-    
-    // Stop staking manager
-    if (window.stakingManager) {
-      window.stakingManager.cleanup();
-    }
-    
-    this.isInitialized = false;
   }
 }
 
-// ================================================================
-// PAGE INITIALIZERS
-// ================================================================
+// Initialize app when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    const app = new App();
+    app.init();
+    // Make app globally accessible for debugging
+    window.purgexApp = app;
+  });
+} else {
+  const app = new App();
+  app.init();
+  window.purgexApp = app;
+}
 
-// Home page
-window.homePage = {
-  async init() {
-    console.log('Home page initialized');
-    
-    // Update wallet UI
-    if (window.wallet) {
-      window.wallet.updateAllWalletUI();
-    }
-    
-    // Load live stats, setup animations, etc.
-  }
-};
-
-// Sweep page
-window.sweepPage = {
-  async init() {
-    console.log('Sweep page initialized');
-    
-    // Update wallet UI first
-    if (window.wallet) {
-      window.wallet.updateAllWalletUI();
-    }
-    
-    if (window.wallet?.isConnected) {
-      // Start token discovery
-      try {
-        await window.tokenDiscovery.getWalletTokens(window.wallet.address);
-        window.tokenDiscovery.renderTokenTable(
-          window.tokenDiscovery.discoveredTokens, 
-          'tokenTableBody'
-        );
-      } catch (error) {
-        console.error('Token discovery failed:', error);
-      }
-    }
-    
-    // Setup select all checkbox
-    const selectAll = document.getElementById('selectAll');
-    if (selectAll) {
-      selectAll.addEventListener('change', (e) => {
-        if (e.target.checked) {
-          window.tokenDiscovery.selectAll();
-        } else {
-          window.tokenDiscovery.deselectAll();
-        }
-      });
-    }
-  }
-};
-
-// Staking page
-window.stakingPage = {
-  async init() {
-    console.log('Staking page initialized');
-    
-    // Update wallet UI first
-    if (window.wallet) {
-      window.wallet.updateAllWalletUI();
-    }
-    
-    if (window.wallet?.isConnected) {
-      await window.stakingManager.loadDashboard();
-    }
-    
-    // Setup staking event listeners
-    this.setupEventListeners();
-  },
-  
-  setupEventListeners() {
-    // Stake button
-    const stakeBtn = document.getElementById('stakeBtn');
-    if (stakeBtn) {
-      stakeBtn.addEventListener('click', async () => {
-        try {
-          const amountInput = document.getElementById('stakeAmount');
-          const amount = amountInput.value;
-          
-          if (!amount || parseFloat(amount) <= 0) {
-            window.wallet.showToast('Please enter a valid amount', 'error');
-            return;
-          }
-          
-          // Disable button during transaction
-          stakeBtn.disabled = true;
-          stakeBtn.textContent = '🔄 Staking...';
-          
-          await window.stakingManager.stake(amount);
-          
-          // Clear input and reset button
-          amountInput.value = '';
-          stakeBtn.textContent = '🔒 Stake PRGX';
-          
-        } catch (error) {
-          console.error('Stake failed:', error);
-          window.wallet.showToast(error.message, 'error');
-          
-          // Reset button
-          stakeBtn.disabled = false;
-          stakeBtn.textContent = '🔒 Stake PRGX';
-        } finally {
-          stakeBtn.disabled = false;
-        }
-      });
-    }
-    
-    // Unstake button
-    const unstakeBtn = document.getElementById('unstakeBtn');
-    if (unstakeBtn) {
-      unstakeBtn.addEventListener('click', async () => {
-        try {
-          const amountInput = document.getElementById('unstakeAmount');
-          const amount = amountInput.value;
-          
-          if (!amount || parseFloat(amount) <= 0) {
-            window.wallet.showToast('Please enter a valid amount', 'error');
-            return;
-          }
-          
-          // Disable button during transaction
-          unstakeBtn.disabled = true;
-          unstakeBtn.textContent = '🔄 Unstaking...';
-          
-          await window.stakingManager.unstake(amount);
-          
-          // Clear input and reset button
-          amountInput.value = '';
-          unstakeBtn.textContent = '🔓 Unstake PRGX';
-          
-        } catch (error) {
-          console.error('Unstake failed:', error);
-          window.wallet.showToast(error.message, 'error');
-          
-          // Reset button
-          unstakeBtn.disabled = false;
-          unstakeBtn.textContent = '🔓 Unstake PRGX';
-        } finally {
-          unstakeBtn.disabled = false;
-        }
-      });
-    }
-    
-    // Claim button
-    const claimBtn = document.getElementById('claimBtn');
-    if (claimBtn) {
-      claimBtn.addEventListener('click', async () => {
-        try {
-          // Disable button during transaction
-          claimBtn.disabled = true;
-          claimBtn.textContent = '🔄 Claiming...';
-          
-          await window.stakingManager.claimRewards();
-          
-          // Reset button
-          claimBtn.textContent = '💎 Claim Rewards';
-          
-        } catch (error) {
-          console.error('Claim failed:', error);
-          window.wallet.showToast(error.message, 'error');
-          
-          // Reset button
-          claimBtn.disabled = false;
-          claimBtn.textContent = '💎 Claim Rewards';
-        } finally {
-          // Button will be re-enabled by dashboard update
-        }
-      });
-    }
-    
-    // Max stake button
-    const maxStakeBtn = document.getElementById('maxStakeBtn');
-    if (maxStakeBtn) {
-      maxStakeBtn.addEventListener('click', () => {
-        const walletPRGXElement = document.getElementById('walletPRGX');
-        const stakeAmountInput = document.getElementById('stakeAmount');
-        
-        if (walletPRGXElement && stakeAmountInput) {
-          const balance = walletPRGXElement.textContent.replace(' PRGX', '');
-          stakeAmountInput.value = balance;
-        }
-      });
-    }
-    
-    // Max unstake button
-    const maxUnstakeBtn = document.getElementById('maxUnstakeBtn');
-    if (maxUnstakeBtn) {
-      maxUnstakeBtn.addEventListener('click', () => {
-        const stakedDisplayElement = document.getElementById('stakedDisplay');
-        const unstakeAmountInput = document.getElementById('unstakeAmount');
-        
-        if (stakedDisplayElement && unstakeAmountInput) {
-          const balance = stakedDisplayElement.textContent.replace(' PRGX', '');
-          unstakeAmountInput.value = balance;
-        }
-      });
-    }
-  }
-};
-
-// Tokenomics page
-window.tokenomicsPage = {
-  async init() {
-    console.log('Tokenomics page initialized');
-    
-    // Update wallet UI
-    if (window.wallet) {
-      window.wallet.updateAllWalletUI();
-    }
-    
-    // Setup charts, animations, etc.
-  }
-};
-
-// Contracts page
-window.contractsPage = {
-  async init() {
-    console.log('Contracts page initialized');
-    
-    // Update wallet UI
-    if (window.wallet) {
-      window.wallet.updateAllWalletUI();
-    }
-    
-    // Setup contract verification display
-  }
-};
-
-// About page
-window.aboutPage = {
-  async init() {
-    console.log('About page initialized');
-    
-    // Update wallet UI
-    if (window.wallet) {
-      window.wallet.updateAllWalletUI();
-    }
-    
-    // Setup team display, roadmap, etc.
-  }
-};
-
-// ================================================================
-// GLOBAL APP INSTANCE
-// ================================================================
-
-window.app = new App();
-
-// ================================================================
-// DOM READY - START APPLICATION
-// ================================================================
-
-document.addEventListener('DOMContentLoaded', async () => {
-  await window.app.init();
-});
-
-// ================================================================
-// CLEANUP ON PAGE UNLOAD
-// ================================================================
-
-window.addEventListener('beforeunload', () => {
-  if (window.app) {
-    window.app.cleanup();
-  }
-});
+export default App;

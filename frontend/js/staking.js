@@ -40,10 +40,10 @@ class StakingManager {
       
       // Fetch all data in parallel with error handling
       const results = await Promise.allSettled([
-        stakingContract.stakedBalance(userAddress),
-        stakingContract.pendingRewards(userAddress),
-        stakingContract.totalStaked(),
-        stakingContract.rewardRate(),
+        stakingContract.getStakedBalance(userAddress),
+        stakingContract.pendingRewardsOf(userAddress),
+        stakingContract.getTotalStaked(),
+        stakingContract.getRewardRate(),
         prgxContract.balanceOf(userAddress),
         window.priceOracle?.fetchPRGXPrice() || Promise.resolve(0)
       ]);
@@ -255,7 +255,7 @@ class StakingManager {
       );
       
       const amountWei = ethers.parseEther(amountPRGX);
-      const tx = await stakingContract.unstake(amountWei);
+      const tx = await stakingContract.withdraw(amountWei);
       
       this.updateStatusLog(`⏳ Unstake TX: ${tx.hash}`, 'pending');
       
@@ -292,8 +292,12 @@ class StakingManager {
       throw new Error('Dashboard data not loaded');
     }
     
+    if (this.dashboardData.pendingRewards <= 0) {
+      throw new Error('No rewards to claim');
+    }
+    
     try {
-      this.updateStatusLog('🚀 Executing claim transaction...', 'pending');
+      this.updateStatusLog('� Claiming rewards...', 'pending');
       
       const stakingContract = new ethers.Contract(
         CONFIG.CONTRACTS.STAKING,
@@ -301,7 +305,7 @@ class StakingManager {
         window.wallet.signer
       );
       
-      const tx = await stakingContract.claimRewards();
+      const tx = await stakingContract.claimReward();
       
       this.updateStatusLog(`⏳ Claim TX: ${tx.hash}`, 'pending');
       
@@ -311,7 +315,7 @@ class StakingManager {
       const claimedEvent = receipt.logs?.find(log => {
         try {
           const parsed = stakingContract.interface.parseLog(log);
-          return parsed.name === 'RewardsClaimed';
+          return parsed.name === 'RewardPaid';
         } catch {
           return false;
         }
