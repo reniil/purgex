@@ -38,7 +38,11 @@ class TokenDiscovery {
       metadataCacheKey: (addr) => `purgex_meta_${addr}`,
       metadataCacheTTL: 1 * 60 * 60 * 1000, // 1 hour
       // Price cache (local memory only)
-      priceCacheTTL: 10 * 60 * 1000 // 10 minutes
+      priceCacheTTL: 10 * 60 * 1000, // 10 minutes
+      // DEX discovery cache
+      dexCacheKey: 'purgex_dex_token_list',
+      dexCacheTTL: 60 * 60 * 1000, // 1 hour
+      dexApiBase: CONFIG?.APIS?.DEXSCREENER_BASE || 'https://api.dexscreener.com/latest/dex/tokens'
     };
     
     this.activeRequests = 0;
@@ -207,6 +211,64 @@ class TokenDiscovery {
   }
 
   // ================================================================
+  // DEX-BASED DISCOVERY (NEW - fills gap where manual import succeeds)
+  // ================================================================
+  
+  /**
+   * Fetch token addresses from DEXScreener (PulseChain pairs)
+   * This catches tokens that have liquidity but may not have recent transfers
+   * Returns Set of lowercase token addresses
+   */
+  async fetchFromDEXScreener() {
+    // Check cache first
+    const cached = this.tokenCache.get(this.config.dexCacheKey);
+    if (cached && Date.now() - cached.timestamp < this.config.dexCacheTTL) {
+      console.log('[TokenDiscovery] DEX token list from cache:', cached.value.size);
+      return cached.value;
+    }
+
+    const tokenSet = new Set();
+    
+    try {
+      // Fetch all PulseChain pairs from DEXScreener
+      const url = `${this.config.dexApiBase}/pulse`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`DEXScreener HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      this.stats.apiCalls++;
+      
+      const pairs = data.pairs || [];
+      console.log(`[TokenDiscovery] DEXScreener returned ${pairs.length} pairs`);
+      
+      // Extract unique token addresses from baseToken (the token being traded)
+      for (const pair of pairs) {
+        if (pair.baseToken?.address) {
+          tokenSet.add(pair.baseToken.address.toLowerCase());
+        }
+        // Note: quoteToken is usually WPLS or stable, already covered by alwaysCheck
+      }
+      
+      // Cache the result (1 hour TTL)
+      this.tokenCache.set(this.config.dexCacheKey, {
+        value: tokenSet,
+        timestamp: Date.now()
+      });
+      
+      console.log(`[TokenDiscovery] DEX discovery found ${tokenSet.size} unique tokens`);
+      
+    } catch (error) {
+      console.warn('[TokenDiscovery] DEX discovery failed:', error.message);
+      // Return empty set on failure (don't break discovery)
+    }
+    
+    return tokenSet;
+  }
+
+  // ================================================================
   // MAIN DISCOVERY FLOW
   // ================================================================
   
@@ -273,6 +335,12 @@ class TokenDiscovery {
       this.updateDiscoveryStatus('Finding relevant tokens...', 40);
       const relevantTokens = await this.findRelevantTokens(address, tokenDatabase);
       console.log(`[TokenDiscovery] Relevant from transfers: ${relevantTokens.size}`);
+      
+      // STEP 3b: DEX-based discovery (catches tokens with liquidity but no recent transfers)
+      this.updateDiscoveryStatus('Fetching DEX token list...', 45);
+      const dexTokens = await this.fetchFromDEXScreener();
+      console.log(`[TokenDiscovery] Adding ${dexTokens.size} tokens from DEXScreener`);
+      dexTokens.forEach(addr => relevantTokens.add(addr));
       
       // STEP 4: Always check known tokens (PRGX, WPLS)
       for (const addr of this.config.alwaysCheck) {
@@ -543,32 +611,58 @@ class TokenDiscovery {
     for (const [addr, token] of tokensMap) {
       // Skip native (already has metadata)
       if (addr === 'native') {
-        enriched.set(addr, token);
+        enriched.set(addr, {
+          ...token,
+          symbol: 'PLS',
+          name: 'PulseChain',
+          decimals: 18,
+          estimatedUSD: 0,
+          estimatedPRGX: 0
+        });
         continue;
       }
       
+      let symbol, name, decimals;
+      
+      // Try tokenDatabase first
       const dbToken = tokenDatabase.get(addr);
       if (dbToken) {
-        enriched.set(addr, {
-          ...token,
-          symbol: dbToken.symbol || token.symbol || '???',
-          name: dbToken.name || token.name || 'Unknown',
-          decimals: dbToken.decimals || token.decimals || 18
-        });
+        symbol = dbToken.symbol || '???';
+        name = dbToken.name || 'Unknown';
+        decimals = dbToken.decimals || 18;
       } else {
         // Fetch individual token metadata
         try {
           const meta = await this.fetchTokenMetadata(addr);
-          enriched.set(addr, {
-            ...token,
-            symbol: meta?.symbol || '???',
-            name: meta?.name || 'Unknown Token',
-            decimals: meta?.decimals || 18
-          });
+          symbol = meta?.symbol || '???';
+          name = meta?.name || 'Unknown Token';
+          decimals = meta?.decimals || 18;
         } catch (e) {
-          enriched.set(addr, { ...token, symbol: '???', name: 'Unknown', decimals: 18 });
+          symbol = '???';
+          name = 'Unknown';
+          decimals = 18;
         }
       }
+      
+      // Estimate token value (MUST have price data for purging)
+      let estimatedUSD = 0;
+      let estimatedPRGX = 0;
+      try {
+        const valueEstimate = await this.estimateTokenValue(addr, token.balance, decimals);
+        estimatedUSD = valueEstimate.estimatedUSD;
+        estimatedPRGX = valueEstimate.estimatedPRGX;
+      } catch (e) {
+        console.warn(`Failed to estimate value for ${addr}:`, e.message);
+      }
+      
+      enriched.set(addr, {
+        ...token,
+        symbol,
+        name,
+        decimals,
+        estimatedUSD,
+        estimatedPRGX
+      });
     }
     
     return enriched;
