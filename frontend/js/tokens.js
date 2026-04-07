@@ -641,6 +641,53 @@ class TokenDiscovery {
   }
 
   // ================================================================
+  // ESTIMATE TOKEN VALUE
+  // ================================================================
+  async estimateTokenValue(address, balance, decimals) {
+    try {
+      const balanceFormatted = ethers.formatUnits(balance, decimals);
+      const balanceFloat = parseFloat(balanceFormatted);
+      
+      if (balanceFloat === 0) {
+        return { estimatedUSD: 0, estimatedPRGX: 0 };
+      }
+      
+      // Get token price
+      const tokenPrice = await this.getTokenPriceUSD(null, address);
+      
+      if (tokenPrice && tokenPrice > 0) {
+        const usdValue = balanceFloat * tokenPrice;
+        let prgxValue = 0;
+        if (window.priceOracle && window.priceOracle.prgxPriceUSD && window.priceOracle.prgxPriceUSD > 0) {
+          prgxValue = usdValue / window.priceOracle.prgxPriceUSD;
+        }
+        return {
+          estimatedUSD: usdValue,
+          estimatedPRGX: prgxValue
+        };
+      }
+      
+      // Fallback: minimal value to keep token purgable
+      const fallbackUSD = balanceFloat * 0.0001;
+      const fallbackPRGX = window.priceOracle && window.priceOracle.prgxPriceUSD ? 
+        fallbackUSD / window.priceOracle.prgxPriceUSD : 0;
+      
+      console.warn(`[TokenDiscovery] No price for ${address}, using fallback $0.0001/token`);
+      return {
+        estimatedUSD: fallbackUSD,
+        estimatedPRGX: fallbackPRGX
+      };
+      
+    } catch (error) {
+      console.warn('Value estimation failed for token:', address, error);
+      return {
+        estimatedUSD: 0,
+        estimatedPRGX: 0
+      };
+    }
+  }
+
+  // ================================================================
   // UI METHODS
   // ================================================================
   
@@ -945,17 +992,24 @@ class TokenDiscovery {
         });
         
         const bal = BigInt(balance);
-        
-        this.discoveredTokens.set(normalized, {
-          address: normalized,
-          balance: bal,
-          symbol: meta?.symbol || '???',
-          name: meta?.name || 'Unknown Token',
-          decimals: meta?.decimals || 18
-        });
-        
-        this.renderTokenTable(this.discoveredTokens);
-        window.wallet?.showToast?.('Token added', 'success');
+      
+      // Estimate token value (price × balance)
+      const balanceFormatted = parseFloat(ethers.formatUnits(bal, meta?.decimals || 18));
+      const valueEstimate = await this.estimateTokenValue(normalized, bal, meta?.decimals || 18);
+      
+      this.discoveredTokens.set(normalized, {
+        address: normalized,
+        balance: bal,
+        symbol: meta?.symbol || '???',
+        name: meta?.name || 'Unknown Token',
+        decimals: meta?.decimals || 18,
+        estimatedUSD: valueEstimate.estimatedUSD,
+        estimatedPRGX: valueEstimate.estimatedPRGX
+      });
+      
+      this.renderTokenTable(this.discoveredTokens);
+      this.updateSweepSummary(); // Refresh PRGX estimate
+      window.wallet?.showToast?.('Token added successfully', 'success');
       }
     } catch (error) {
       console.error('Failed to add custom token:', error);
