@@ -37,40 +37,46 @@ class PriceOracle {
   }
 
   async _fetchPRGXPriceInternal() {
+    console.log('🔍 Starting PRGX price fetch...');
+    
     // SOURCE 1: RouteScan API
     try {
+      console.log('📡 Attempting RouteScan API...');
       const price = await this.fetchFromRouteScan();
       if (price > 0) {
-        console.log('PRGX price from RouteScan:', price);
+        console.log('✅ PRGX price from RouteScan:', price);
         return price;
       }
     } catch (error) {
-      console.warn('RouteScan price fetch failed:', error);
+      console.warn('⚠️ RouteScan price fetch failed:', error.message);
     }
     
     // SOURCE 2: DEXScreener API
     try {
+      console.log('📡 Attempting DEXScreener API...');
       const price = await this.fetchFromDexScreener();
       if (price > 0) {
-        console.log('PRGX price from DEXScreener:', price);
+        console.log('✅ PRGX price from DEXScreener:', price);
         return price;
       }
     } catch (error) {
-      console.warn('DEXScreener price fetch failed:', error);
+      console.warn('⚠️ DEXScreener price fetch failed:', error.message);
     }
     
     // SOURCE 3: Calculate from LP reserves
     try {
+      console.log('📡 Attempting LP calculation...');
       const price = await this.calculateFromLP();
       if (price > 0) {
-        console.log('PRGX price from LP calculation:', price);
+        console.log('✅ PRGX price from LP calculation:', price);
         return price;
       }
     } catch (error) {
-      console.warn('LP calculation failed:', error);
+      console.warn('⚠️ LP calculation failed:', error.message);
     }
     
     // All sources failed
+    console.error('❌ All price sources failed');
     throw new Error('Unable to fetch PRGX price from any source');
   }
 

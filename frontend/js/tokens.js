@@ -811,16 +811,16 @@ class TokenDiscovery {
       }
       
       const metadata = await this.fetchTokenMetadata(address);
-      const estimatedValue = await this.estimateTokenValue(address, balance, metadata.decimals);
+      const valueEstimate = await this.estimateTokenValue(address, balance, metadata.decimals);
       
       const token = {
         address: address,
         ...metadata,
         balance: balance,
         balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
-        estimatedUSD: estimatedValue,
+        estimatedUSD: valueEstimate.estimatedUSD,
         estimatedPRGX: window.priceOracle ? 
-          window.priceOracle.usdToPRGX(estimatedValue) : 0,
+          window.priceOracle.usdToPRGX(valueEstimate.estimatedUSD) : valueEstimate.estimatedPRGX,
         source: 'custom'
       };
       
@@ -840,3 +840,6 @@ class TokenDiscovery {
 // ================================================================
 
 window.tokenDiscovery = new TokenDiscovery();
+
+// Also expose selectedTokens for compatibility
+window.tokenDiscovery.selectedTokens = window.tokenDiscovery.selectedTokens;
