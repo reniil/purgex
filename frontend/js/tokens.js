@@ -553,23 +553,43 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // ESTIMATE TOKEN VALUE
+  // ESTIMATE TOKEN VALUE - WITH REAL PRICE FETCHING
   // ================================================================
   async estimateTokenValue(address, balance, decimals) {
     try {
-      // For demo tokens, assign mock values
-      if (address === '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase() ||
-          address === '0x02f26235791bf5e65a3253aa06845c0451237567'.toLowerCase()) {
-        const balanceFormatted = ethers.formatUnits(balance, decimals);
+      const balanceFormatted = ethers.formatUnits(balance, decimals);
+      const balanceFloat = parseFloat(balanceFormatted);
+      
+      // For known tokens, use real price from DEXScreener
+      try {
+        const price = await this.fetchTokenPriceFromDexScreener(address);
+        if (price && price > 0) {
+          const valueUSD = balanceFloat * price;
+          return {
+            estimatedUSD: valueUSD,
+            estimatedPRGX: window.priceOracle ? window.priceOracle.usdToPRGX(valueUSD) : 0
+          };
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch price for ${address}:`, error.message);
+      }
+      
+      // Fallback: For PLS/WPLS (known tokens)
+      if (address === '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase() || // WPLS
+          address === '0x02f26235791bf5e65a3253aa06845c0451237567'.toLowerCase() || // PLS
+          address.toLowerCase() === CONFIG.CONTRACTS.WPLS.toLowerCase()) {
+        // PLS price ~$0.0001, WPLS ~$1 (pegged)
+        const isWPLS = address.toLowerCase() === CONFIG.CONTRACTS.WPLS.toLowerCase();
+        const price = isWPLS ? 1.0 : 0.0001; // Approximate
+        const valueUSD = balanceFloat * price;
         return {
-          estimatedPRGX: parseFloat(balanceFormatted) * 100, // 100 PRGX per token
-          estimatedUSD: parseFloat(balanceFormatted) * 0.001 // $0.001 per token
+          estimatedUSD: valueUSD,
+          estimatedPRGX: window.priceOracle ? window.priceOracle.usdToPRGX(valueUSD) : balanceFloat * 10000
         };
       }
       
-      // For other tokens, use simple estimation (dust = <$5)
-      const balanceFormatted = ethers.formatUnits(balance, decimals);
-      const tokenValueUSD = parseFloat(balanceFormatted) * 0.001; // Assume $0.001 per token
+      // Last resort: mock for unknown tokens (dust estimate)
+      const tokenValueUSD = balanceFloat * 0.001; // Assume $0.001 per token as last resort
       
       // Define dust as tokens worth <$5
       if (tokenValueUSD > 5) {
@@ -580,15 +600,66 @@ class TokenDiscovery {
       }
       
       return {
-        estimatedPRGX: tokenValueUSD * 100000, // Rough conversion
+        estimatedPRGX: tokenValueUSD * 100000,
         estimatedUSD: tokenValueUSD
       };
     } catch (error) {
-      console.warn('Value estimation failed for token:', error);
+      console.warn('Value estimation failed for token:', address, error);
       return {
         estimatedPRGX: 0,
         estimatedUSD: 0
       };
+    }
+  }
+
+  // ================================================================
+  // FETCH TOKEN PRICE FROM DEXSCREENER
+  // ================================================================
+  async fetchTokenPriceFromDexScreener(tokenAddress) {
+    // Check cache first
+    const cacheKey = `price_${tokenAddress.toLowerCase()}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const { price, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < 60000) { // 1 minute cache
+        return price;
+      }
+    }
+    
+    try {
+      const url = `${CONFIG.APIS.DEXSCREENER_BASE}/${tokenAddress}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`DEXScreener returned ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.pairs && data.pairs.length > 0) {
+        // Find pair with WPLS (most liquid on PulseChain)
+        const wplsPair = data.pairs.find(pair => 
+          pair.quoteToken?.address?.toLowerCase() === CONFIG.CONTRACTS.WPLS.toLowerCase() ||
+          pair.baseToken?.address?.toLowerCase() === CONFIG.CONTRACTS.WPLS.toLowerCase()
+        );
+        
+        const targetPair = wplsPair || data.pairs[0];
+        
+        if (targetPair.priceUsd) {
+          const price = parseFloat(targetPair.priceUsd);
+          // Cache the price
+          localStorage.setItem(cacheKey, JSON.stringify({
+            price,
+            timestamp: Date.now()
+          }));
+          return price;
+        }
+      }
+      
+      return 0;
+    } catch (error) {
+      console.warn(`DEXScreener fetch failed for ${tokenAddress}:`, error.message);
+      return 0;
     }
   }
 
