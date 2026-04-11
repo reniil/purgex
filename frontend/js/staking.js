@@ -240,7 +240,10 @@ class StakingManager {
       
       this.updateStatusLog('✅ Stake successful!', 'success');
       
-      // Reload dashboard
+      // Wait a moment for blockchain sync
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Reload dashboard to update staked balance
       await this.loadDashboard();
       
       window.wallet.showToast(`Successfully staked ${amountPRGX} PRGX`, 'success');
