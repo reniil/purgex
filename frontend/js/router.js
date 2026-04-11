@@ -39,6 +39,14 @@ class Router {
       requiresWallet: true
     });
 
+    this.routes.set('/factory', {
+      path: '/factory',
+      file: 'pages/factory.html',
+      title: 'Factory — PurgeX',
+      init: 'factoryPage.init',
+      requiresWallet: false
+    });
+
     this.routes.set('/tokenomics', {
       path: '/tokenomics',
       file: 'pages/tokenomics.html',
