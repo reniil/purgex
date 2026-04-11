@@ -96,17 +96,24 @@ class App {
     
     if (hamburger && navbarLinks) {
       hamburger.addEventListener('click', () => {
-        navbarLinks.classList.toggle('open');
+        navbarLinks.classList.toggle('active');
+      });
+      
+      // Close mobile menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!navbarLinks.contains(e.target) && !hamburger.contains(e.target)) {
+          navbarLinks.classList.remove('active');
+        }
+      });
+      
+      // Close mobile menu when link is clicked
+      const navLinks = navbarLinks.querySelectorAll('.nav-link');
+      navLinks.forEach(link => {
+        link.addEventListener('click', () => {
+          navbarLinks.classList.remove('active');
+        });
       });
     }
-
-    // Close mobile menu when link is clicked
-    const navLinks = document.querySelectorAll('.nav-link');
-    navLinks.forEach(link => {
-      link.addEventListener('click', () => {
-        navbarLinks.classList.remove('open');
-      });
-    });
   }
 
   // ================================================================
@@ -130,7 +137,12 @@ class App {
         if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
           modalOverlay.classList.add('hidden');
         }
-      }
+        // Also close mobile menu on escape
+        const navbarLinks = document.getElementById('navbarLinks');
+        if (navbarLinks) {
+          navbarLinks.classList.remove('active');
+        }
+      });
     });
 
     // Copy to clipboard functionality
