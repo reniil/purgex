@@ -32,14 +32,10 @@
     </div>
 
     <!-- Stats Row -->
-    <div class="grid grid-5" style="margin-bottom: 2rem;">
+    <div class="grid grid-4" style="margin-bottom: 2rem;">
       <div class="stat-card">
-        <div class="label">Discovered Pairs</div>
+        <div class="label">Discovered Tokens</div>
         <div class="value" id="statTotalPairs" style="color: var(--pink);">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">PRGX Pairs</div>
-        <div class="value" id="statPrgxPairs" style="color: #00E5CC;">—</div>
       </div>
       <div class="stat-card">
         <div class="label">LP Pairs</div>
@@ -63,16 +59,13 @@
                style="width: 100%; padding: 12px 14px 12px 40px; font-family: var(--font-mono); font-size: 0.9rem; background: var(--bg-input); border: 1px solid var(--border-1); border-radius: var(--r-md); color: var(--text-1); outline: none;">
       </div>
       <button class="filter-btn" data-filter="all" style="padding: 10px 16px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; cursor: pointer; white-space: nowrap;">
-        All
-      </button>
-      <button class="filter-btn" data-filter="prgx" style="padding: 10px 16px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; white-space: nowrap;">
-        PRGX Pairs
+        All Pairs
       </button>
       <button class="filter-btn" data-filter="lp" style="padding: 10px 16px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; white-space: nowrap;">
         LP Pairs
       </button>
       <button class="filter-btn" data-filter="stable" style="padding: 10px 16px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; white-space: nowrap;">
-        Stables
+        Stable Pairs
       </button>
       <select id="factorySort" style="padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; outline: none;">
         <option value="transfers">Sort: Transfers</option>

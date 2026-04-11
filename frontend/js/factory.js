@@ -7,7 +7,8 @@ const API_BASE = "https://api.scan.pulsechain.com/api";
 const PAGE_SIZE = 10;
 const PULSEX_FACTORY = "0x1715a3E4a142d8b698131108995174F37aEBA10D";
 
-// Known PulseChain tokens — seeded list
+// Known PulseChain tokens — real tokens with WPLS pairs on PulseX
+// Data fetched in real-time from BlockScout API
 const KNOWN_TOKENS = [
   { symbol: "WPLS",  addr: "0xA1077a294dDE1B09bB078844df40758a5D0f9a27" },
   { symbol: "PLSX",  addr: "0x95B303987A60C71504D99Aa1b13B4DA07b0790ab" },
@@ -18,8 +19,7 @@ const KNOWN_TOKENS = [
   { symbol: "USDT",  addr: "0x0Cb6F5a34ad42ec934882A05265A7d5F59b51A2f" },
   { symbol: "WETH",  addr: "0x02DcdD04e3F455D838cd1249292C58f3B79e3C3C" },
   { symbol: "eHEX",  addr: "0x57fde0a71132198BBeC939B98976993d8D89D225" },
-  // PRGX from config
-  { symbol: "PRGX",  addr: window.CONFIG?.CONTRACTS?.PRGX_TOKEN || "0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0" },
+  { symbol: "PRGC",  addr: "0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0" }, // PRGX token
 ];
 
 class FactoryPage {
@@ -209,9 +209,6 @@ class FactoryPage {
       const rows = [];
       let idx = 1;
 
-      const wplsTok = tokenData.find((t) => t.symbol === "WPLS");
-      const hasPrgx = tokenData.some((t) => t.symbol === "PRGX");
-
       for (const tok of tokenData) {
         const decimals = tok.meta?.decimals || "18";
         const name = tok.meta?.name || tok.symbol;
@@ -219,7 +216,7 @@ class FactoryPage {
 
         if (tok.symbol === "WPLS") continue;
 
-        // Token / WPLS pair
+        // Only create Token/WPLS pairs (real PulseX pairs)
         rows.push({
           id: idx++,
           t0: tok.symbol,
@@ -233,23 +230,6 @@ class FactoryPage {
           transfers: tok.transfers,
           holders: tok.holders,
         });
-
-        // Token / PRGX pair
-        if (hasPrgx && tok.symbol !== "PRGX") {
-          rows.push({
-            id: idx++,
-            t0: tok.symbol,
-            t1: "PRGX",
-            type: "prgx",
-            addr: tok.addr,
-            name,
-            decimals,
-            tokenType: type_val,
-            supply: tok.supply,
-            transfers: Math.floor(tok.transfers * 0.25),
-            holders: tok.holders,
-          });
-        }
       }
 
       // Sort by transfer activity
@@ -273,9 +253,7 @@ class FactoryPage {
   }
 
   classifyPair(t0, t1) {
-    const PRGX_SYMBOLS = ["PRGX"];
     const STABLE_SYMBOLS = ["DAI", "USDC", "USDT", "BUSD", "eUSDC", "eDAI", "eUSDT"];
-    if (PRGX_SYMBOLS.includes(t0) || PRGX_SYMBOLS.includes(t1)) return "prgx";
     if (STABLE_SYMBOLS.includes(t0) && STABLE_SYMBOLS.includes(t1)) return "stable";
     return "lp";
   }
@@ -309,7 +287,6 @@ class FactoryPage {
   }
 
   updateStats() {
-    const prgxCount = this.pairs.filter((p) => p.type === "prgx").length;
     const lpCount = this.pairs.filter((p) => p.type === "lp").length;
     const stableCount = this.pairs.filter((p) => p.type === "stable").length;
     const totalTx = this.pairs.reduce((s, p) => s + p.transfers, 0);
@@ -320,7 +297,6 @@ class FactoryPage {
     };
 
     setVal('statTotalPairs', this.pairs.length.toLocaleString());
-    setVal('statPrgxPairs', prgxCount.toLocaleString());
     setVal('statLpPairs', lpCount.toLocaleString());
     setVal('statStablePairs', stableCount.toLocaleString());
     setVal('statTotalTx', totalTx.toLocaleString());
@@ -347,12 +323,11 @@ class FactoryPage {
 
   renderRow(pair, index) {
     const typeColors = {
-      prgx: { bg: 'rgba(0, 229, 204, 0.1)', border: 'rgba(0, 229, 204, 0.3)', color: '#00E5CC' },
       stable: { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.3)', color: '#60a5fa' },
       lp: { bg: 'rgba(139, 92, 246, 0.1)', border: 'rgba(139, 92, 246, 0.3)', color: '#a78bfa' },
     };
     const typeStyle = typeColors[pair.type] || typeColors.lp;
-    const typeLabel = pair.type === "prgx" ? "PRGX" : pair.type === "stable" ? "STABLE" : "LP";
+    const typeLabel = pair.type === "stable" ? "STABLE" : "LP";
 
     const shortAddr = (addr) => addr.length < 10 ? addr : addr.slice(0, 6) + "..." + addr.slice(-4);
     
@@ -375,7 +350,7 @@ class FactoryPage {
               ${pair.t0}
             </span>
             <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-3);">/</span>
-            <span style="display: inline-flex; align-items: center; background: ${pair.type === 'prgx' ? 'rgba(0, 229, 204, 0.1)' : 'rgba(128, 128, 128, 0.08)'}; border: 1px solid ${pair.type === 'prgx' ? 'rgba(0, 229, 204, 0.3)' : 'rgba(128, 128, 128, 0.25)'}; border-radius: 20px; padding: 3px 10px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: ${pair.type === 'prgx' ? '#00E5CC' : 'var(--text-2)'};">
+            <span style="display: inline-flex; align-items: center; background: rgba(128, 128, 128, 0.08); border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 20px; padding: 3px 10px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--text-2);">
               ${pair.t1}
             </span>
           </div>
