@@ -9,6 +9,8 @@ class StakingManager {
     this.pendingRewardsStart = 0;
     this.userStakeFraction = 0;
     this.lastUnstakeTime = null;
+    this.cooldownData = null;
+    this.cooldownInterval = null;
   }
 
   // ================================================================
@@ -78,16 +80,18 @@ class StakingManager {
           readProvider
         );
 
-        // Fetch user-specific data
+        // Fetch user-specific data including cooldown
         const userResults = await Promise.allSettled([
           stakingContract.getStakedBalance(userAddress),
           stakingContract.pendingRewardsOf(userAddress),
-          prgxContract.balanceOf(userAddress)
+          prgxContract.balanceOf(userAddress),
+          stakingContract.getCooldownRemaining(userAddress),
+          stakingContract.canUnstake(userAddress)
         ]);
 
         // Log user results
         userResults.forEach((result, index) => {
-          const methodNames = ['stakedBalance', 'pendingRewards', 'walletBalance'];
+          const methodNames = ['stakedBalance', 'pendingRewards', 'walletBalance', 'cooldownRemaining', 'canUnstake'];
           if (result.status === 'rejected') {
             console.error(`❌ [STAKING] ${methodNames[index]} failed:`, result.reason);
           } else {
@@ -103,9 +107,17 @@ class StakingManager {
         this.dashboardData.walletBalance = userResults[2].status === 'fulfilled' ?
           Number(ethers.formatEther(userResults[2].value)) : 0;
 
+        // Store cooldown data
+        this.cooldownData = {
+          remaining: userResults[3].status === 'fulfilled' ? Number(userResults[3].value) : 0,
+          canUnstake: userResults[4].status === 'fulfilled' ? userResults[4].value : true
+        };
+
         // Update UI for connected user
         this.updateDashboardUI();
         this.startLiveRewardCounter(this.dashboardData.pendingRewards);
+        this.updateCooldownUI();
+        this.startCooldownCounter();
         this.updateStatusLog('✅ Dashboard loaded with wallet data', 'success');
       } else {
         // Update UI for disconnected user (show global data only)
@@ -198,6 +210,39 @@ class StakingManager {
     if (this.rewardCounterInterval) {
       clearInterval(this.rewardCounterInterval);
       this.rewardCounterInterval = null;
+    }
+  }
+
+  // ================================================================
+  // COOLDOWN COUNTER
+  // ================================================================
+  startCooldownCounter() {
+    if (this.cooldownInterval) {
+      clearInterval(this.cooldownInterval);
+    }
+
+    if (!this.cooldownData || this.cooldownData.remaining === 0) {
+      return;
+    }
+
+    // Update cooldown display every second
+    this.cooldownInterval = setInterval(() => {
+      if (this.cooldownData.remaining > 0) {
+        this.cooldownData.remaining -= 1;
+        this.updateCooldownUI();
+      } else {
+        this.cooldownData.canUnstake = true;
+        this.updateCooldownUI();
+        clearInterval(this.cooldownInterval);
+        this.cooldownInterval = null;
+      }
+    }, 1000);
+  }
+
+  stopCooldownCounter() {
+    if (this.cooldownInterval) {
+      clearInterval(this.cooldownInterval);
+      this.cooldownInterval = null;
     }
   }
 
@@ -520,11 +565,40 @@ class StakingManager {
   updateClaimButton(pendingRewards) {
     const claimBtn = document.getElementById('claimBtn');
     const claimAmount = document.getElementById('claimAmount');
-    
+
     if (claimBtn && claimAmount) {
       claimAmount.textContent = pendingRewards.toFixed(4);
       claimBtn.disabled = pendingRewards <= 0;
     }
+  }
+
+  updateCooldownUI() {
+    if (!this.cooldownData) return;
+
+    const cooldownEl = document.getElementById('unstakeCooldown');
+    const unstakeBtn = document.getElementById('unstakeBtn');
+    const unstakeAllBtn = document.getElementById('unstakeAllBtn');
+    const exitBtn = document.getElementById('exitBtn');
+
+    if (cooldownEl) {
+      if (this.cooldownData.remaining > 0) {
+        const hours = Math.floor(this.cooldownData.remaining / 3600);
+        const minutes = Math.floor((this.cooldownData.remaining % 3600) / 60);
+        const seconds = this.cooldownData.remaining % 60;
+        cooldownEl.textContent = `Cooldown: ${hours}h ${minutes}m ${seconds}s`;
+        cooldownEl.style.display = 'block';
+        cooldownEl.style.color = 'var(--red)';
+      } else {
+        cooldownEl.textContent = 'Ready to unstake';
+        cooldownEl.style.color = 'var(--green)';
+      }
+    }
+
+    // Disable unstake buttons during cooldown
+    const canUnstake = this.cooldownData.canUnstake;
+    if (unstakeBtn) unstakeBtn.disabled = !canUnstake;
+    if (unstakeAllBtn) unstakeAllBtn.disabled = !canUnstake;
+    if (exitBtn) exitBtn.disabled = !canUnstake;
   }
 
   showDisconnectedState() {
@@ -607,7 +681,9 @@ class StakingManager {
   // ================================================================
   cleanup() {
     this.stopLiveRewardCounter();
+    this.stopCooldownCounter();
     this.dashboardData = null;
+    this.cooldownData = null;
   }
 }
 

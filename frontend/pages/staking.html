@@ -69,9 +69,9 @@
         <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-input); border-radius: var(--r-md); font-size: 0.85rem;">
           <p style="color: var(--text-3); margin-bottom: 0.5rem;">✨ <strong>Benefits:</strong></p>
           <ul style="color: var(--text-3); margin: 0; padding-left: 1.2rem;">
-            <li>No lock-up period</li>
+            <li>48-hour unstake cooldown</li>
             <li>Rewards start immediately</li>
-            <li>Withdraw anytime</li>
+            <li>Claim rewards anytime</li>
           </ul>
         </div>
       </div>
@@ -79,28 +79,37 @@
       <!-- RIGHT: UNSTAKE + CLAIM -->
       <div class="card">
         <h3 style="margin-bottom: 1.5rem;">Unstake PRGX</h3>
-        
+
+        <div id="unstakeCooldown" style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--r-md); font-size: 0.9rem; font-weight: 600; text-align: center; display: none;">
+          Loading cooldown status...
+        </div>
+
         <div style="margin-bottom: 1.5rem;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
             <span style="color: var(--text-2);">Staked balance:</span>
             <span id="stakedDisplay" class="mono">— PRGX</span>
           </div>
         </div>
-        
+
         <div class="input-group" style="margin-bottom: 1.5rem;">
-          <input class="input input-with-max" id="unstakeAmount" type="number" 
+          <input class="input input-with-max" id="unstakeAmount" type="number"
                  placeholder="0.0" min="0" step="any">
           <button class="btn-max input-max-btn" onclick="stakingManager.setMaxUnstake()">MAX</button>
         </div>
-        
-        <button class="btn-secondary" style="width: 100%; margin-bottom: 1rem;"
+
+        <button class="btn-secondary" style="width: 100%; margin-bottom: 1rem;" id="unstakeBtn"
                 onclick="stakingManager.unstake(document.getElementById('unstakeAmount').value)">
           Unstake PRGX
         </button>
-        
+
+        <button class="btn-secondary" style="width: 100%; margin-bottom: 1rem;" id="unstakeAllBtn"
+                onclick="stakingManager.unstakeAll()">
+          Unstake All
+        </button>
+
         <hr class="divider">
-        
-        <button class="btn-primary" style="width: 100%;" id="claimBtn" 
+
+        <button class="btn-primary" style="width: 100%;" id="claimBtn"
                 onclick="stakingManager.claimRewards()">
           Claim Rewards · <span id="claimAmount">0.00</span> PRGX
         </button>

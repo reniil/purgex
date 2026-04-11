@@ -26,6 +26,7 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
     event RewardsDeposited(address indexed token, uint256 amount);
     event RewardsWithdrawn(address indexed token, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 amount);
+    event CooldownStarted(address indexed user, uint256 cooldownEnd);
 
     // ══════════════════════════════════════════════════════════
     //  STATE
@@ -42,6 +43,12 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
 
     /// @notice Accumulated reward per staked token, scaled by 1e18
     uint256 public rewardPerTokenStored;
+
+    /// @notice Cooldown period for unstaking (48 hours in seconds)
+    uint256 public constant UNSTAKE_COOLDOWN = 48 hours;
+
+    /// @dev Timestamp when user last staked (for cooldown enforcement)
+    mapping(address => uint256) public lastStakeTime;
 
     /// @notice Last timestamp rewards were updated
     uint256 public lastUpdateTime;
@@ -205,6 +212,9 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
         totalStaked              += amount;
         userStaked[msg.sender]   += amount;
 
+        // Record stake time for cooldown tracking
+        lastStakeTime[msg.sender] = block.timestamp;
+
         // FIX: use safeTransferFrom instead of raw transferFrom (original used raw)
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -226,6 +236,9 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
         totalStaked            += balance;
         userStaked[msg.sender] += balance;
 
+        // Record stake time for cooldown tracking
+        lastStakeTime[msg.sender] = block.timestamp;
+
         stakingToken.safeTransferFrom(msg.sender, address(this), balance);
 
         emit Staked(msg.sender, balance);
@@ -237,6 +250,7 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
 
     /**
      * @notice Withdraw a specific amount of staked PRGX.
+     * @dev Enforces 48-hour cooldown since last stake.
      */
     function withdraw(uint256 amount)
         external
@@ -246,6 +260,10 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
     {
         require(amount > 0, "Cannot withdraw 0");
         require(userStaked[msg.sender] >= amount, "Insufficient staked balance");
+
+        // Enforce cooldown period
+        uint256 cooldownEnd = lastStakeTime[msg.sender] + UNSTAKE_COOLDOWN;
+        require(block.timestamp >= cooldownEnd, "Unstake cooldown active");
 
         totalStaked            -= amount;
         userStaked[msg.sender] -= amount;
@@ -258,6 +276,7 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
 
     /**
      * @notice Withdraw all staked PRGX.
+     * @dev Enforces 48-hour cooldown since last stake.
      */
     function withdrawAll()
         external
@@ -267,6 +286,10 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
     {
         uint256 amount = userStaked[msg.sender];
         require(amount > 0, "Nothing staked");
+
+        // Enforce cooldown period
+        uint256 cooldownEnd = lastStakeTime[msg.sender] + UNSTAKE_COOLDOWN;
+        require(block.timestamp >= cooldownEnd, "Unstake cooldown active");
 
         totalStaked            -= amount;
         userStaked[msg.sender]  = 0;
@@ -278,6 +301,7 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
 
     /**
      * @notice Withdraw all staked tokens AND claim pending rewards in one tx.
+     * @dev Enforces 48-hour cooldown since last stake for principal withdrawal.
      */
     function exit()
         external
@@ -287,6 +311,10 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
     {
         uint256 stakeAmt = userStaked[msg.sender];
         if (stakeAmt > 0) {
+            // Enforce cooldown period
+            uint256 cooldownEnd = lastStakeTime[msg.sender] + UNSTAKE_COOLDOWN;
+            require(block.timestamp >= cooldownEnd, "Unstake cooldown active");
+
             totalStaked            -= stakeAmt;
             userStaked[msg.sender]  = 0;
             stakingToken.safeTransfer(msg.sender, stakeAmt);
@@ -426,6 +454,23 @@ contract PRGXStaking is Ownable(msg.sender), Pausable, ReentrancyGuard {
     /// @notice Current reward emission rate (tokens/second)
     function getRewardRate() external view returns (uint256) {
         return rewardRate;
+    }
+
+    /// @notice Returns the cooldown end timestamp for a user
+    function getCooldownEnd(address _user) external view returns (uint256) {
+        return lastStakeTime[_user] + UNSTAKE_COOLDOWN;
+    }
+
+    /// @notice Returns remaining cooldown seconds for a user (0 if expired)
+    function getCooldownRemaining(address _user) external view returns (uint256) {
+        uint256 cooldownEnd = lastStakeTime[_user] + UNSTAKE_COOLDOWN;
+        if (block.timestamp >= cooldownEnd) return 0;
+        return cooldownEnd - block.timestamp;
+    }
+
+    /// @notice Check if a user can unstake (cooldown expired)
+    function canUnstake(address _user) external view returns (bool) {
+        return block.timestamp >= lastStakeTime[_user] + UNSTAKE_COOLDOWN;
     }
 
     /// @notice Address of the current reward token
