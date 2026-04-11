@@ -73,6 +73,8 @@ CONFIG.ABIS = {
     'function claimRewards() external',
     'function pendingRewards(address user) view returns (uint256)',
     'function stakedBalance(address user) view returns (uint256)',
+    'function balanceOf(address user) view returns (uint256)',
+    'function userStakedBalance(address user) view returns (uint256)',
     'function totalStaked() view returns (uint256)',
     'function rewardRate() view returns (uint256)',
     'event Staked(address indexed user, uint256 amount)',

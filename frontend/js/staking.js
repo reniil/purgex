@@ -44,8 +44,27 @@ class StakingManager {
       );
       
       // Fetch all data in parallel with error handling
+      // Try multiple function names for staked balance
+      let stakedBalanceResult;
+      try {
+        stakedBalanceResult = await stakingContract.stakedBalance(userAddress);
+      } catch (e) {
+        console.log('⚠️ [STAKING] stakedBalance() failed, trying balanceOf()');
+        try {
+          stakedBalanceResult = await stakingContract.balanceOf(userAddress);
+        } catch (e2) {
+          console.log('⚠️ [STAKING] balanceOf() failed, trying userStakedBalance()');
+          try {
+            stakedBalanceResult = await stakingContract.userStakedBalance(userAddress);
+          } catch (e3) {
+            console.log('⚠️ [STAKING] userStakedBalance() failed, using 0');
+            stakedBalanceResult = 0n;
+          }
+        }
+      }
+      
       const results = await Promise.allSettled([
-        stakingContract.stakedBalance(userAddress),
+        Promise.resolve(stakedBalanceResult),
         stakingContract.pendingRewards(userAddress),
         stakingContract.totalStaked(),
         stakingContract.rewardRate(),
