@@ -99,6 +99,10 @@ class Sweeper {
       if (!window.wallet?.provider) {
         throw new Error('Wallet provider not available');
       }
+      
+      // DEBUG: Log input
+      console.log('🔍 getEstimate called with:', tokenAddresses);
+      console.log('🔍 getEstimate type:', typeof tokenAddresses, 'length:', tokenAddresses?.length);
 
       // Try to get real estimate from contract first
       const sweeperContract = new ethers.Contract(
@@ -145,6 +149,11 @@ class Sweeper {
           await window.priceOracle.fetchPRGXPrice();
         }
         
+        // DEBUG: Log what we're looking for
+        console.log('🔍 DEBUG: tokenAddresses passed:', tokenAddresses);
+        console.log('🔍 DEBUG: discoveredTokens size:', window.tokenDiscovery.discoveredTokens?.size);
+        console.log('🔍 DEBUG: discoveredTokens keys:', Array.from(window.tokenDiscovery.discoveredTokens?.keys() || []));
+        
         // Fallback estimation: sum up token values
         let totalUSD = 0;
         let totalPRGX = 0;
@@ -155,6 +164,7 @@ class Sweeper {
           // Try both cases - discovered tokens stored as lowercase
           const lookupAddr = address.toLowerCase();
           const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
+          console.log(`🔍 DEBUG: Looking up ${lookupAddr}, found:`, token ? {symbol: token.symbol, estimatedPRGX: token.estimatedPRGX} : 'NOT FOUND');
           if (token) {
             totalUSD += token.estimatedUSD || 0;
             totalPRGX += token.estimatedPRGX || 0;
