@@ -184,13 +184,21 @@ class FactoryPage {
         this.page = 1;
         this.applyFilters();
         
-        // If it's a valid contract address, look it up
+        // If it's a valid 0x address (42 chars), could be token or wallet
         if (value.startsWith('0x') && value.length === 42) {
-          console.log('Contract address detected, looking up:', value);
-          await this.lookupTokenByAddress(value);
+          console.log('Address detected:', value);
+          
+          // First try as token
+          const tokenResult = await this.lookupTokenByAddress(value);
+          
+          // If not a token (no metadata), try as wallet
+          if (!tokenResult) {
+            console.log('Not a token, trying wallet search...');
+            await this.searchWalletAddress(value);
+          }
         }
         
-        // Debounced external search
+        // Debounced external search for non-address queries
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           if (value.length >= 3 && !value.startsWith('0x')) {
@@ -394,10 +402,19 @@ class FactoryPage {
       return null;
     }
     
-    // Check if already in list
+    // Check if already in KNOWN_TOKENS (persisted)
+    const knownExisting = KNOWN_TOKENS.find(t => t.addr.toLowerCase() === address.toLowerCase());
+    if (knownExisting) {
+      console.log('Token already in KNOWN_TOKENS:', knownExisting);
+      // Still check if it's in current pairs
+      const pairExisting = this.pairs.find(p => p.addr.toLowerCase() === address.toLowerCase());
+      if (pairExisting) return pairExisting;
+    }
+    
+    // Check if already in current pairs list
     const existing = this.pairs.find(p => p.addr.toLowerCase() === address.toLowerCase());
     if (existing) {
-      console.log('Token already in list:', existing);
+      console.log('Token already in current pairs:', existing);
       return existing;
     }
     
@@ -416,6 +433,7 @@ class FactoryPage {
         return null;
       }
       
+      // Create token object
       const token = {
         symbol: meta.symbol || 'UNKNOWN',
         addr: address,
@@ -428,6 +446,17 @@ class FactoryPage {
         holders,
         source: 'lookup'
       };
+      
+      // Add to KNOWN_TOKENS for persistence (avoid duplicates)
+      if (!KNOWN_TOKENS.find(t => t.addr.toLowerCase() === address.toLowerCase())) {
+        KNOWN_TOKENS.push({
+          symbol: token.symbol,
+          addr: token.addr,
+          name: token.name,
+          source: 'discovered'
+        });
+        console.log('✅ Added to KNOWN_TOKENS:', token.symbol);
+      }
       
       // Add to pairs
       const pair = {
@@ -447,13 +476,120 @@ class FactoryPage {
       
       this.pairs.push(pair);
       this.applyFilters();
+      this.updateStats();
       
       console.log('✅ Added new token:', pair);
+      
+      // Show toast
+      if (window.wallet?.showToast) {
+        window.wallet.showToast(`Discovered ${token.symbol}! Added to list.`, 'success');
+      }
+      
       return pair;
       
     } catch (err) {
       console.error('Token lookup failed:', err);
       return null;
+    }
+  }
+
+  // Search wallet address to find tokens held by that wallet
+  async searchWalletAddress(address) {
+    if (!address || !address.startsWith('0x') || address.length !== 42) {
+      console.log('Invalid wallet address format:', address);
+      return null;
+    }
+    
+    console.log('🔍 Searching wallet for tokens:', address);
+    
+    try {
+      // Fetch token transfers for this address (shows tokens the wallet has interacted with)
+      const res = await this.callAPI({ 
+        module: "account", 
+        action: "tokentx",
+        address: address,
+        page: 1,
+        offset: 100
+      });
+      
+      if (!res.result || !Array.isArray(res.result)) {
+        console.log('No token transactions found for wallet:', address);
+        return null;
+      }
+      
+      // Extract unique token addresses
+      const tokenAddrs = new Set();
+      res.result.forEach(tx => {
+        if (tx.contractAddress) {
+          tokenAddrs.add(tx.contractAddress.toLowerCase());
+        }
+      });
+      
+      console.log(`Found ${tokenAddrs.size} unique tokens in wallet`);
+      
+      // Look up each token
+      const discovered = [];
+      for (const tokenAddr of tokenAddrs) {
+        const pair = await this.lookupTokenByAddress(tokenAddr);
+        if (pair) discovered.push(pair);
+      }
+      
+      console.log(`✅ Discovered ${discovered.length} tokens from wallet`);
+      
+      // Show results UI
+      this.renderWalletResults(address, discovered);
+      
+      return discovered;
+      
+    } catch (err) {
+      console.error('Wallet search failed:', err);
+      return null;
+    }
+  }
+
+  renderWalletResults(walletAddr, tokens) {
+    const tbody = document.getElementById('factoryTableBody');
+    if (!tbody) return;
+    
+    const shortAddr = (addr) => addr.slice(0, 6) + '...' + addr.slice(-4);
+    
+    const html = `
+      <div style="padding: 16px 20px; border-bottom: 2px solid var(--pink); background: rgba(255, 45, 120, 0.05);">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+          <span style="font-size: 1.2rem;">👛</span>
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; color: var(--text-1);">
+              Wallet: ${shortAddr(walletAddr)}
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-3);">
+              Found ${tokens.length} tokens
+            </div>
+          </div>
+          <a href="https://scan.pulsechain.com/address/${walletAddr}" target="_blank" rel="noopener"
+             style="margin-left: auto; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-2); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.7rem; color: var(--primary-light); text-decoration: none;">
+            View on PulseScan →
+          </a>
+        </div>
+        ${tokens.length > 0 ? `
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            ${tokens.map(t => `
+              <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border-2); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-2);">
+                <span style="color: var(--pink); font-weight: 600;">${t.t0}</span>
+                <span style="opacity: 0.5;">•</span>
+                <span>${t.transfers.toLocaleString()} tx</span>
+              </span>
+            `).join('')}
+          </div>
+        ` : '<div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-3);">No tokens with activity found</div>'}
+      </div>
+    `;
+    
+    // Prepend to table
+    tbody.insertAdjacentHTML('afterbegin', html);
+    
+    // Show toast
+    if (window.wallet?.showToast && tokens.length > 0) {
+      window.wallet.showToast(`Found ${tokens.length} tokens in wallet ${shortAddr(walletAddr)}`, 'success');
     }
   }
 
