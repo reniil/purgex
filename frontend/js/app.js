@@ -142,7 +142,7 @@ class App {
         if (navbarLinks) {
           navbarLinks.classList.remove('active');
         }
-      });
+      }
     });
 
     // Copy to clipboard functionality
