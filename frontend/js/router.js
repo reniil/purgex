@@ -101,12 +101,17 @@ class Router {
     this.isNavigating = true;
     
     try {
-      const hash = window.location.hash || '#/';
-      const path = hash.slice(1); // Remove #
+      const hash = window.location.hash || '#/';  
+      let path = hash.slice(1); // Remove #
       
-      console.log('Handling route:', path);
+      // Strip query parameters for route lookup but preserve them for later use
+      const queryIndex = path.indexOf('?');
+      const queryString = queryIndex !== -1 ? path.slice(queryIndex + 1) : '';
+      const routePath = queryIndex !== -1 ? path.slice(0, queryIndex) : path;
       
-      const route = this.routes.get(path);
+      console.log('Handling route:', routePath, 'query:', queryString);
+      
+      const route = this.routes.get(routePath);
       
       if (!route) {
         console.log('Route not found:', path, 'redirecting to home');
@@ -120,15 +125,15 @@ class Router {
       // Check if wallet is required
       if (route.requiresWallet && !window.wallet?.isConnected) {
         console.log('Wallet required, but loading page without injected prompt');
-        await this.loadPage(route.file, route.title, route.init, false);
+        await this.loadPage(route.file, route.title, route.init, false, queryString);
       } else {
         console.log('Loading page normally');
         // Load page normally
-        await this.loadPage(route.file, route.title, route.init, false);
+        await this.loadPage(route.file, route.title, route.init, false, queryString);
       }
       
-      this.currentPath = path;
-      this.updateActiveNavLink(path);
+      this.currentPath = routePath;
+      this.updateActiveNavLink(routePath);
       
     } catch (error) {
       console.error('Route handling failed:', error);
@@ -141,7 +146,7 @@ class Router {
   // ================================================================
   // LOAD PAGE
   // ================================================================
-  async loadPage(pageFile, title, initFunction, showWalletPrompt = false) {
+  async loadPage(pageFile, title, initFunction, showWalletPrompt = false, queryString = '') {
     const appContainer = document.getElementById('app');
     if (!appContainer) {
       throw new Error('App container not found');
@@ -194,6 +199,8 @@ class Router {
       
       // Initialize page
       if (initFunction) {
+        // Store query params globally for page to access
+        window.currentRouteQuery = this.parseQueryString(queryString);
         await this.runPageInit(initFunction);
       }
       

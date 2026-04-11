@@ -440,25 +440,79 @@ window.homePage = {
 window.sweepPage = {
   async init() {
     console.log('Sweep page initialized');
-    
+
     // Update wallet UI first
     if (window.wallet) {
       window.wallet.updateAllWalletUI();
     }
-    
+
+    // Check for query parameters from factory page
+    const query = window.currentRouteQuery || {};
+    const preselectedToken = query.token;
+    const preselectedContract = query.contract;
+
+    if (preselectedToken && preselectedContract) {
+      console.log('Preselected token from factory:', preselectedToken, preselectedContract);
+    }
+
     if (window.wallet?.isConnected) {
       // Start token discovery
       try {
         await window.tokenDiscovery.getWalletTokens(window.wallet.address);
         window.tokenDiscovery.renderTokenTable(
-          window.tokenDiscovery.discoveredTokens, 
+          window.tokenDiscovery.discoveredTokens,
           'tokenTableBody'
         );
+
+        // If a token was preselected from factory page, select it
+        if (preselectedContract) {
+          const contractLower = preselectedContract.toLowerCase();
+          const token = window.tokenDiscovery.discoveredTokens.get(contractLower);
+
+          if (token) {
+            // Token found in discovered tokens, select it
+            window.tokenDiscovery.selectedTokens.add(contractLower);
+            window.tokenDiscovery.updateSweepSummary();
+            window.tokenDiscovery.renderTokenTable(
+              window.tokenDiscovery.discoveredTokens,
+              'tokenTableBody'
+            );
+            window.wallet.showToast(`Selected ${preselectedToken} for sweeping`, 'success');
+          } else {
+            // Token not in discovered list, add it as a custom token
+            window.wallet.showToast(`Adding ${preselectedToken} to sweep list...`, 'info');
+            await window.tokenDiscovery.addCustomToken(preselectedContract);
+
+            // Select the newly added token
+            window.tokenDiscovery.selectedTokens.add(contractLower);
+            window.tokenDiscovery.updateSweepSummary();
+            window.tokenDiscovery.renderTokenTable(
+              window.tokenDiscovery.discoveredTokens,
+              'tokenTableBody'
+            );
+          }
+        }
       } catch (error) {
         console.error('Token discovery failed:', error);
       }
+    } else {
+      // Show connect panel if not connected
+      const connectPanel = document.getElementById('connectPanel');
+      const discoveryPanel = document.getElementById('discoveryPanel');
+      if (connectPanel && discoveryPanel) {
+        connectPanel.classList.remove('hidden');
+        discoveryPanel.classList.add('hidden');
+      }
+
+      // Store the preselected token for after connection
+      if (preselectedToken && preselectedContract) {
+        window.pendingFactoryToken = {
+          symbol: preselectedToken,
+          address: preselectedContract
+        };
+      }
     }
-    
+
     // Setup select all checkbox
     const selectAll = document.getElementById('selectAll');
     if (selectAll) {

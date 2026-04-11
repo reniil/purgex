@@ -42,17 +42,71 @@ class FactoryPage {
     this.plsPrice = null;
     this.lastUpdated = null;
     this.refreshInterval = null;
+    this.walletBalances = new Map(); // Store wallet token balances
   }
 
   async init() {
     console.log('🏭 Initializing Factory page...');
-    
+
     this.setupEventListeners();
     await this.load();
     this.startLiveUpdates();
-    
+
+    // Load wallet balances if connected
+    if (window.wallet?.isConnected) {
+      await this.loadWalletBalances();
+    }
+
     // Try to load additional tokens from DEXScreener
     await this.loadAdditionalTokens();
+  }
+
+  // Load wallet balances for displayed tokens
+  async loadWalletBalances() {
+    if (!window.wallet?.isConnected || !window.wallet?.address) {
+      return;
+    }
+
+    try {
+      console.log('💰 Loading wallet balances for factory tokens...');
+      const provider = window.wallet.provider;
+      const userAddress = window.wallet.address;
+
+      // Load balance for each token in the pairs list
+      for (const pair of this.pairs) {
+        try {
+          const tokenContract = new ethers.Contract(
+            pair.addr,
+            CONFIG.ABIS.ERC20,
+            provider
+          );
+          const balance = await tokenContract.balanceOf(userAddress);
+          this.walletBalances.set(pair.addr.toLowerCase(), balance.toString());
+        } catch (err) {
+          // Token might not be a standard ERC20, skip
+          this.walletBalances.set(pair.addr.toLowerCase(), '0');
+        }
+      }
+
+      // Also get PLS balance
+      const plsBalance = await provider.getBalance(userAddress);
+      this.walletBalances.set('pls', plsBalance.toString());
+
+      // Update PLS balance display
+      const plsCard = document.getElementById('plsBalanceCard');
+      const plsValue = document.getElementById('statPLSBalance');
+      if (plsCard && plsValue) {
+        const plsFormatted = Number(ethers.formatEther(plsBalance)).toFixed(4);
+        plsValue.textContent = `${plsFormatted} PLS`;
+        plsCard.style.display = 'block';
+      }
+
+      console.log('✅ Wallet balances loaded');
+      this.renderTable(); // Re-render to show balances
+
+    } catch (error) {
+      console.error('Failed to load wallet balances:', error);
+    }
   }
 
   // Fetch additional tokens from external sources (DEXScreener trending)
@@ -761,7 +815,7 @@ class FactoryPage {
     const typeLabel = pair.type === "stable" ? "STABLE" : "LP";
 
     const shortAddr = (addr) => addr.length < 10 ? addr : addr.slice(0, 6) + "..." + addr.slice(-4);
-    
+
     const fmtBalance = (raw, decimals = 18) => {
       if (!raw || raw === "0") return "0";
       const val = Number(raw) / Math.pow(10, Number(decimals));
@@ -771,10 +825,15 @@ class FactoryPage {
       return val.toFixed(4);
     };
 
+    // Get wallet balance for this token
+    const walletBalance = this.walletBalances.get(pair.addr.toLowerCase());
+    const hasBalance = walletBalance && walletBalance !== "0";
+    const balanceFormatted = walletBalance ? fmtBalance(walletBalance, pair.decimals) : null;
+
     return `
-      <div style="display: grid; grid-template-columns: 50px 1.5fr 140px 120px 100px 90px 80px 100px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); align-items: center; transition: background 0.15s;" onmouseover="this.style.background='rgba(124, 58, 237, 0.05)'" onmouseout="this.style.background='transparent'">
+      <div style="display: grid; grid-template-columns: 50px 1.5fr 140px 100px 120px 100px 90px 80px 100px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); align-items: center; transition: background 0.15s;" onmouseover="this.style.background='rgba(124, 58, 237, 0.05)'" onmouseout="this.style.background='transparent'">
         <div style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-3);">${index}</div>
-        
+
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <span style="display: inline-flex; align-items: center; background: rgba(255, 45, 120, 0.1); border: 1px solid rgba(255, 45, 120, 0.3); border-radius: 20px; padding: 3px 10px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--pink);">
@@ -784,6 +843,9 @@ class FactoryPage {
             <span style="display: inline-flex; align-items: center; background: rgba(128, 128, 128, 0.08); border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 20px; padding: 3px 10px; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--text-2);">
               ${pair.t1}
             </span>
+            ${hasBalance ? `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-family: var(--font-mono); font-size: 0.65rem; font-weight: 600; background: rgba(0, 209, 140, 0.15); border: 1px solid rgba(0, 209, 140, 0.4); color: var(--green);">
+              💰 ${balanceFormatted}
+            </span>` : ''}
           </div>
           <div style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-3);">${pair.name}</div>
         </div>
@@ -793,6 +855,10 @@ class FactoryPage {
             ${shortAddr(pair.addr)}
           </a>
           <div style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-3); margin-top: 2px;">${pair.tokenType}</div>
+        </div>
+
+        <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; ${hasBalance ? 'color: var(--green);' : 'color: var(--text-1);'}">
+          ${balanceFormatted || '-'}
         </div>
 
         <div style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600;">${fmtBalance(pair.supply, pair.decimals)}</div>
@@ -816,10 +882,17 @@ class FactoryPage {
 
   handlePurge(from, to, pairAddr, tokenName) {
     console.log('Purge triggered:', { from, to, pairAddr, tokenName });
-    
-    // Navigate to sweep page with pre-filled token
-    window.location.hash = `#/sweep?token=${from}&contract=${pairAddr}`;
-    
+
+    // Check if wallet is connected
+    if (!window.wallet?.isConnected) {
+      window.wallet.showToast('Please connect your wallet first', 'error');
+      window.wallet.connect();
+      return;
+    }
+
+    // Navigate to sweep page with pre-filled token using router
+    window.location.hash = `#/sweep?token=${encodeURIComponent(from)}&contract=${pairAddr}`;
+
     // Show toast
     if (window.wallet?.showToast) {
       window.wallet.showToast(`Selected ${from} for purging. Redirecting to Sweep page...`, 'info');
