@@ -5,7 +5,18 @@
 <div class="staking-page">
 
   <div class="container">
-    
+
+    <!-- CONNECT WALLET BANNER (shown when not connected) -->
+    <div id="stakingConnectBanner" style="display: none; margin-bottom: 2rem; padding: 1.5rem; background: rgba(124, 58, 237, 0.1); border: 1px solid rgba(124, 58, 237, 0.3); border-radius: var(--r-lg); text-align: center;">
+      <h3 style="margin-bottom: 0.5rem; color: var(--primary-light);">🔒 Wallet Not Connected</h3>
+      <p style="color: var(--text-2); margin-bottom: 1rem;">
+        Global pool stats are shown below. Connect your wallet to see your personal staking data and interact with the protocol.
+      </p>
+      <button class="btn-primary" onclick="window.wallet?.connect()">
+        Connect Wallet
+      </button>
+    </div>
+
     <!-- STAT CARDS ROW -->
     <div class="grid grid-4" style="margin-bottom: 3rem;">
       <div class="stat-card accent">

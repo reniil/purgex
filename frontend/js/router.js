@@ -36,7 +36,7 @@ class Router {
       file: 'pages/staking.html',
       title: 'Staking — PurgeX',
       init: 'stakingPage.init',
-      requiresWallet: true
+      requiresWallet: false  // Allow viewing global stats without wallet
     });
 
     this.routes.set('/factory', {

@@ -15,94 +15,115 @@ class StakingManager {
   // LOAD DASHBOARD DATA
   // ================================================================
   async loadDashboard() {
-    if (!window.wallet?.isConnected) {
-      this.showDisconnectedState();
-      return;
-    }
-    
     try {
       this.updateStatusLog('📊 Loading staking dashboard...', 'info');
-      
-      const provider = window.wallet.provider;
-      const userAddress = window.wallet.address;
-      
-      console.log('🔍 [STAKING] Loading dashboard for address:', userAddress);
-      console.log('🔍 [STAKING] Staking contract address:', CONFIG.CONTRACTS.STAKING);
-      console.log('🔍 [STAKING] PRGX contract address:', CONFIG.CONTRACTS.PRGX_TOKEN);
-      
-      // Create contract instances
+
+      // Use read-only provider for global data (works without wallet)
+      const readProvider = new ethers.JsonRpcProvider(CONFIG.NETWORK.rpc);
+      const isConnected = window.wallet?.isConnected;
+      const userAddress = window.wallet?.address;
+
+      console.log('🔍 [STAKING] Loading dashboard. Wallet connected:', isConnected);
+      console.log('🔍 [STAKING] Staking contract:', CONFIG.CONTRACTS.STAKING);
+
+      // Create contract instances with read provider
       const stakingContract = new ethers.Contract(
         CONFIG.CONTRACTS.STAKING,
         CONFIG.ABIS.STAKING,
-        provider
+        readProvider
       );
-      
-      const prgxContract = new ethers.Contract(
-        CONFIG.CONTRACTS.PRGX_TOKEN,
-        CONFIG.ABIS.ERC20,
-        provider
-      );
-      
-      // Fetch all data in parallel with error handling
-      // PRGXStaking.sol exposes user stake as getStakedBalance(address) (and userStaked mapping)
-      const results = await Promise.allSettled([
-        stakingContract.getStakedBalance(userAddress),
-        stakingContract.pendingRewardsOf(userAddress),
+
+      // Fetch global pool data (available to everyone)
+      const globalResults = await Promise.allSettled([
         stakingContract.totalStaked(),
         stakingContract.rewardRate(),
-        prgxContract.balanceOf(userAddress),
         window.priceOracle?.fetchPRGXPrice() || Promise.resolve(0)
       ]);
-      
-      // Log results for debugging
-      results.forEach((result, index) => {
-        const methodNames = ['stakedBalance', 'pendingRewards', 'totalStaked', 'rewardRate', 'walletBalance', 'prgxPrice'];
+
+      // Log global results
+      globalResults.forEach((result, index) => {
+        const methodNames = ['totalStaked', 'rewardRate', 'prgxPrice'];
         if (result.status === 'rejected') {
           console.error(`❌ [STAKING] ${methodNames[index]} failed:`, result.reason);
         } else {
           console.log(`✅ [STAKING] ${methodNames[index]}:`, result.value);
         }
       });
-      
-      // Extract results, using fallbacks for failed calls
-      const stakedBalance = results[0].status === 'fulfilled' ? results[0].value : 0n;
-      const pendingRewards = results[1].status === 'fulfilled' ? results[1].value : 0n;
-      const totalStaked = results[2].status === 'fulfilled' ? results[2].value : 0n;
-      const rewardRate = results[3].status === 'fulfilled' ? results[3].value : 0n;
-      const walletBalance = results[4].status === 'fulfilled' ? results[4].value : 0n;
-      const prgxPrice = results[5].status === 'fulfilled' ? results[5].value : 0;
-      
-      // Format data
+
+      const totalStaked = globalResults[0].status === 'fulfilled' ? globalResults[0].value : 0n;
+      const rewardRate = globalResults[1].status === 'fulfilled' ? globalResults[1].value : 0n;
+      const prgxPrice = globalResults[2].status === 'fulfilled' ? globalResults[2].value : 0;
+
+      // Initialize dashboard data with global values
       this.dashboardData = {
-        stakedBalance: Number(ethers.formatEther(stakedBalance)),
-        pendingRewards: Number(ethers.formatEther(pendingRewards)),
         totalStaked: Number(ethers.formatEther(totalStaked)),
         rewardRate: Number(ethers.formatEther(rewardRate)),
-        walletBalance: Number(ethers.formatEther(walletBalance)),
-        prgxPrice: prgxPrice
+        prgxPrice: prgxPrice,
+        // User-specific defaults (will be updated if wallet connected)
+        stakedBalance: 0,
+        pendingRewards: 0,
+        walletBalance: 0
       };
-      
+
+      // Calculate APR from global data
+      this.dashboardData.apr = this.calculateAPR(this.dashboardData.rewardRate, this.dashboardData.totalStaked);
+
+      // If wallet is connected, fetch user-specific data
+      if (isConnected && userAddress) {
+        console.log('🔍 [STAKING] Loading user data for:', userAddress);
+
+        const prgxContract = new ethers.Contract(
+          CONFIG.CONTRACTS.PRGX_TOKEN,
+          CONFIG.ABIS.ERC20,
+          readProvider
+        );
+
+        // Fetch user-specific data
+        const userResults = await Promise.allSettled([
+          stakingContract.getStakedBalance(userAddress),
+          stakingContract.pendingRewardsOf(userAddress),
+          prgxContract.balanceOf(userAddress)
+        ]);
+
+        // Log user results
+        userResults.forEach((result, index) => {
+          const methodNames = ['stakedBalance', 'pendingRewards', 'walletBalance'];
+          if (result.status === 'rejected') {
+            console.error(`❌ [STAKING] ${methodNames[index]} failed:`, result.reason);
+          } else {
+            console.log(`✅ [STAKING] ${methodNames[index]}:`, result.value);
+          }
+        });
+
+        // Update user-specific data
+        this.dashboardData.stakedBalance = userResults[0].status === 'fulfilled' ?
+          Number(ethers.formatEther(userResults[0].value)) : 0;
+        this.dashboardData.pendingRewards = userResults[1].status === 'fulfilled' ?
+          Number(ethers.formatEther(userResults[1].value)) : 0;
+        this.dashboardData.walletBalance = userResults[2].status === 'fulfilled' ?
+          Number(ethers.formatEther(userResults[2].value)) : 0;
+
+        // Update UI for connected user
+        this.updateDashboardUI();
+        this.startLiveRewardCounter(this.dashboardData.pendingRewards);
+        this.updateStatusLog('✅ Dashboard loaded with wallet data', 'success');
+      } else {
+        // Update UI for disconnected user (show global data only)
+        this.updateDashboardUIGlobalOnly();
+        this.updateStatusLog('✅ Global pool data loaded (connect wallet for personal stats)', 'info');
+      }
+
       console.log('🔍 [STAKING] Dashboard data:', this.dashboardData);
-      
-      // Calculate APR
-      const apr = this.calculateAPR(this.dashboardData.rewardRate, this.dashboardData.totalStaked);
-      this.dashboardData.apr = apr;
-      
-      // Update UI
-      this.updateDashboardUI();
-      
-      // Start live reward counter
-      this.startLiveRewardCounter(this.dashboardData.pendingRewards);
-      
-      this.updateStatusLog('✅ Dashboard loaded', 'success');
-      
+
     } catch (error) {
       console.error('Dashboard load failed:', error);
       this.updateStatusLog(`❌ Failed to load dashboard: ${error.message}`, 'error');
-      
+
       // Show demo data if contracts don't exist
       this.showDemoData();
-      window.wallet.showToast('Using demo data - contracts not deployed yet', 'info');
+      if (window.wallet?.showToast) {
+        window.wallet.showToast('Using demo data - contracts not deployed yet', 'info');
+      }
     }
   }
 
@@ -466,19 +487,25 @@ class StakingManager {
   // ================================================================
   updateDashboardUI() {
     if (!this.dashboardData) return;
-    
+
+    // Hide connect banner when connected
+    const connectBanner = document.getElementById('stakingConnectBanner');
+    if (connectBanner) {
+      connectBanner.style.display = 'none';
+    }
+
     // Update stat cards
     this.updateElement('stakedBalance', this.dashboardData.stakedBalance.toFixed(2));
     this.updateElement('totalStaked', this.dashboardData.totalStaked.toFixed(0));
     this.updateElement('estimatedAPR', `${this.dashboardData.apr.toFixed(1)}%`);
-    
+
     // Update wallet and staked displays
     this.updateElement('walletPRGX', `${this.dashboardData.walletBalance.toFixed(4)} PRGX`);
     this.updateElement('stakedDisplay', `${this.dashboardData.stakedBalance.toFixed(4)} PRGX`);
-    
+
     // Update pending rewards (will be updated by live counter)
     this.updateElement('pendingRewards', this.dashboardData.pendingRewards.toFixed(4));
-    
+
     // Update claim button
     this.updateClaimButton(this.dashboardData.pendingRewards);
   }
@@ -515,6 +542,49 @@ class StakingManager {
       const btn = document.getElementById(id);
       if (btn) btn.disabled = true;
     });
+  }
+
+  // ================================================================
+  // UI UPDATE FOR DISCONNECTED USERS (Global data only)
+  // ================================================================
+  updateDashboardUIGlobalOnly() {
+    if (!this.dashboardData) return;
+
+    // Show connect banner
+    const connectBanner = document.getElementById('stakingConnectBanner');
+    if (connectBanner) {
+      connectBanner.style.display = 'block';
+    }
+
+    // Update global stats (visible to everyone)
+    this.updateElement('totalStaked', this.dashboardData.totalStaked.toFixed(0));
+    this.updateElement('estimatedAPR', `${this.dashboardData.apr.toFixed(1)}%`);
+
+    // Show connect prompt for user-specific stats
+    this.updateElement('stakedBalance', 'Connect Wallet');
+    this.updateElement('pendingRewards', '—');
+    this.updateElement('walletPRGX', '— PRGX');
+    this.updateElement('stakedDisplay', '— PRGX');
+
+    // Disable action buttons
+    const buttons = ['claimBtn'];
+    buttons.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.disabled = true;
+    });
+
+    // Add click handlers to connect wallet on user stats
+    const stakedBalanceEl = document.getElementById('stakedBalance');
+    if (stakedBalanceEl) {
+      stakedBalanceEl.style.cursor = 'pointer';
+      stakedBalanceEl.style.color = 'var(--primary-light)';
+      stakedBalanceEl.onclick = () => {
+        if (window.wallet?.connect) {
+          window.wallet.connect();
+        }
+      };
+      stakedBalanceEl.title = 'Click to connect wallet';
+    }
   }
 
   // ================================================================
