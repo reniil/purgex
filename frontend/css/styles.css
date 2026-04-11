@@ -101,9 +101,6 @@ a:hover { color: var(--pink-light); }
 .hamburger span { width: 24px; height: 2px; background: var(--text-1); border-radius: 2px; transition: all 0.3s; }
 @media (max-width: 768px) {
   .hamburger { display: flex; }
-  .navbar-links { display: none; position: fixed; top: 72px; left: 0; right: 0;
-    flex-direction: column; background: var(--bg-overlay); padding: 2rem; gap: 1.5rem; }
-  .navbar-links.open { display: flex; }
 }
 
 /* ================================================================
