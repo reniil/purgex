@@ -26,6 +26,10 @@ class StakingManager {
       const provider = window.wallet.provider;
       const userAddress = window.wallet.address;
       
+      console.log('🔍 [STAKING] Loading dashboard for address:', userAddress);
+      console.log('🔍 [STAKING] Staking contract address:', CONFIG.CONTRACTS.STAKING);
+      console.log('🔍 [STAKING] PRGX contract address:', CONFIG.CONTRACTS.PRGX_TOKEN);
+      
       // Create contract instances
       const stakingContract = new ethers.Contract(
         CONFIG.CONTRACTS.STAKING,
@@ -49,6 +53,16 @@ class StakingManager {
         window.priceOracle?.fetchPRGXPrice() || Promise.resolve(0)
       ]);
       
+      // Log results for debugging
+      results.forEach((result, index) => {
+        const methodNames = ['stakedBalance', 'pendingRewards', 'totalStaked', 'rewardRate', 'walletBalance', 'prgxPrice'];
+        if (result.status === 'rejected') {
+          console.error(`❌ [STAKING] ${methodNames[index]} failed:`, result.reason);
+        } else {
+          console.log(`✅ [STAKING] ${methodNames[index]}:`, result.value);
+        }
+      });
+      
       // Extract results, using fallbacks for failed calls
       const stakedBalance = results[0].status === 'fulfilled' ? results[0].value : 0n;
       const pendingRewards = results[1].status === 'fulfilled' ? results[1].value : 0n;
@@ -66,6 +80,8 @@ class StakingManager {
         walletBalance: Number(ethers.formatEther(walletBalance)),
         prgxPrice: prgxPrice
       };
+      
+      console.log('🔍 [STAKING] Dashboard data:', this.dashboardData);
       
       // Calculate APR
       const apr = this.calculateAPR(this.dashboardData.rewardRate, this.dashboardData.totalStaked);
