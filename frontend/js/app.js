@@ -478,13 +478,27 @@ window.stakingPage = {
   async init() {
     console.log('Staking page initialized');
     
-    // Update wallet UI first
+    // Initialize staking manager
+    if (window.stakingManager) {
+      await window.stakingManager.loadDashboard();
+    }
+    
+    // Update wallet UI
     if (window.wallet) {
       window.wallet.updateAllWalletUI();
     }
     
-    if (window.wallet?.isConnected) {
-      await window.stakingManager.loadDashboard();
+    // Populate contract address link
+    this.populateContractAddress();
+  },
+  
+  populateContractAddress() {
+    const stakingExplorerLink = document.getElementById('stakingExplorerLink');
+    if (stakingExplorerLink) {
+      const stakingAddress = CONFIG.CONTRACTS.STAKING;
+      const explorer = CONFIG.NETWORK.explorer;
+      stakingExplorerLink.href = `${explorer}/address/${stakingAddress}`;
+      stakingExplorerLink.textContent = `${stakingAddress.slice(0, 8)}...${stakingAddress.slice(-6)}`;
     }
   }
 };

@@ -166,20 +166,35 @@ class StakingManager {
   // STAKE PRGX
   // ================================================================
   async stake(amountPRGX) {
+    console.log('🔍 [STAKE] Stake called with amount:', amountPRGX);
+    
     if (!window.wallet?.isConnected) {
       throw new Error('Wallet not connected');
     }
     
-    if (!amountPRGX || parseFloat(amountPRGX) <= 0) {
-      throw new Error('Invalid stake amount');
+    // Get amount from input if not provided
+    if (!amountPRGX) {
+      const input = document.getElementById('stakeAmount');
+      if (input) {
+        amountPRGX = input.value;
+      }
     }
+    
+    console.log('🔍 [STAKE] Amount after input check:', amountPRGX);
+    
+    if (!amountPRGX || amountPRGX === '' || isNaN(parseFloat(amountPRGX)) || parseFloat(amountPRGX) <= 0) {
+      throw new Error('Invalid stake amount. Please enter a valid number.');
+    }
+    
+    const amount = parseFloat(amountPRGX);
+    console.log('🔍 [STAKE] Parsed amount:', amount);
     
     if (!this.dashboardData) {
-      throw new Error('Dashboard data not loaded');
+      throw new Error('Dashboard data not loaded. Please wait for data to load.');
     }
     
-    if (parseFloat(amountPRGX) > this.dashboardData.walletBalance) {
-      throw new Error('Insufficient PRGX balance');
+    if (amount > this.dashboardData.walletBalance) {
+      throw new Error(`Insufficient PRGX balance. You have ${this.dashboardData.walletBalance.toFixed(4)} PRGX available.`);
     }
     
     try {

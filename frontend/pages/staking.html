@@ -124,9 +124,8 @@
           <div style="background: var(--bg-input); padding: 1.5rem; border-radius: var(--r-md);">
             <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
               <span style="color: var(--text-2);">Contract:</span>
-              <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.STAKING || '#'}" 
-                 target="_blank" class="mono" style="color: var(--primary-light);">
-                ${(window.CONFIG?.CONTRACTS?.STAKING || '').slice(0, 8)}...
+              <a href="#" id="stakingExplorerLink" target="_blank" class="mono" style="color: var(--primary-light);">
+                Loading...
               </a>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
