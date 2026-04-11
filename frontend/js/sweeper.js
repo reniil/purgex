@@ -344,14 +344,15 @@ class Sweeper {
         return;
       }
 
-      // Build token list with classification
+      // Build token list with classification (sanitized)
       const tokenList = selectedTokens.map(address => {
         const token = window.tokenDiscovery.discoveredTokens.get(address);
+        const safeSymbol = token.symbol ? Utils.sanitize(token.symbol) : '???';
         const classificationBadge = token.classification === 'swappable' ? '🟢' :
                                    token.classification === 'non-swappable' ? '🔴' : '⚪';
         return `
           <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-1);">
-            <span>${classificationBadge} ${token.symbol}</span>
+            <span>${classificationBadge} ${safeSymbol}</span>
             <span class="mono">${parseFloat(token.balanceFormatted).toLocaleString()}</span>
           </div>
         `;

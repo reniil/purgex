@@ -968,6 +968,11 @@ class TokenDiscovery {
     for (const [address, token] of tokens) {
       const row = document.createElement('tr');
 
+      // Sanitize token data to prevent XSS
+      const safeSymbol = Utils ? Utils.sanitize(token.symbol || '???') : (token.symbol || '???');
+      const safeName = Utils ? Utils.sanitize(token.name || 'Unknown Token') : (token.name || 'Unknown Token');
+      const safeAddress = Utils ? Utils.sanitize(address) : address;
+
       // Determine classification badge
       let classificationBadge = '';
       if (token.classification === 'swappable') {
@@ -981,16 +986,16 @@ class TokenDiscovery {
       row.innerHTML = `
         <td>
           <div class="checkbox-custom ${this.selectedTokens.has(address) ? 'checked' : ''}"
-               data-token="${address}" onclick="tokenDiscovery.toggleToken('${address}')">
+               data-token="${safeAddress}" onclick="tokenDiscovery.toggleToken('${safeAddress}')">
             ${this.selectedTokens.has(address) ? '✓' : ''}
           </div>
         </td>
         <td>
           <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="token-icon">${token.symbol.slice(0, 2).toUpperCase()}</div>
+            <div class="token-icon">${safeSymbol.slice(0, 2).toUpperCase()}</div>
             <div>
-              <div class="token-symbol">${token.symbol}</div>
-              <div class="token-name">${token.name}</div>
+              <div class="token-symbol">${safeSymbol}</div>
+              <div class="token-name">${safeName}</div>
             </div>
           </div>
         </td>
