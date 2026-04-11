@@ -715,7 +715,7 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // ESTIMATE PLS VALUE (Native token)
+  // ESTIMATE PLS VALUE (Native token) - Use same logic as regular tokens
   // ================================================================
   async estimatePLSValue(balance, decimals) {
     console.log(`🔍 [PRICE] Estimating value for native PLS, balance: ${balance}, decimals: ${decimals}`);
@@ -751,14 +751,13 @@ class TokenDiscovery {
       const plsValueUSD = parseFloat(balanceFormatted) * plsPriceUSD;
       console.log(`🔍 [PRICE] PLS value in USD: $${plsValueUSD}`);
 
-      // Convert to PRGX using price oracle
+      // Convert to PRGX using current PRGX price (same as regular tokens)
       let estimatedPRGX = 0;
-      if (CONFIG.SWEEP_CONFIG?.USE_FIXED_SWEEP_PRICING && CONFIG.SWEEP_CONFIG?.FIXED_PRGX_PER_USD) {
-        estimatedPRGX = plsValueUSD * CONFIG.SWEEP_CONFIG.FIXED_PRGX_PER_USD;
-        console.log(`🔒 [PRICE] Using fixed sweep pricing: ${CONFIG.SWEEP_CONFIG.FIXED_PRGX_PER_USD} PRGX/USD, estimated PRGX: ${estimatedPRGX}`);
-      } else if (window.priceOracle && window.priceOracle.prgxPriceUSD) {
-        estimatedPRGX = plsValueUSD / window.priceOracle.prgxPriceUSD;
-        console.log(`🔍 [PRICE] PRGX price: $${window.priceOracle.prgxPriceUSD}, estimated PRGX: ${estimatedPRGX}`);
+      const prgxPriceUSD = window.priceOracle?.prgxPriceUSD;
+      
+      if (prgxPriceUSD && prgxPriceUSD > 0) {
+        estimatedPRGX = plsValueUSD / prgxPriceUSD;
+        console.log(`🔍 [PRICE] PRGX price: $${prgxPriceUSD}, estimated PRGX: ${estimatedPRGX}`);
       } else {
         console.warn(`⚠️ [PRICE] PRGX price not available, cannot convert to PRGX`);
       }
@@ -777,7 +776,7 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // ESTIMATE TOKEN VALUE
+  // ESTIMATE TOKEN VALUE - Real market prices from DEX/PulseCoinList
   // ================================================================
   async estimateTokenValue(address, balance, decimals) {
     console.log(`🔍 [PRICE] Estimating value for token ${address}, balance: ${balance}, decimals: ${decimals}`);
@@ -786,13 +785,16 @@ class TokenDiscovery {
       const balanceFormatted = ethers.formatUnits(balance, decimals);
       console.log(`🔍 [PRICE] Balance formatted: ${balanceFormatted}`);
 
-      // For demo tokens, assign mock values
-      if (address === '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase() ||
-          address === '0x02f26235791bf5e65a3253aa06845c0451237567'.toLowerCase()) {
-        console.log(`🔍 [PRICE] Using mock values for demo token`);
+      // Check if this is PRGX token itself - use current PRGX price
+      if (address.toLowerCase() === CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase()) {
+        const prgxPriceUSD = window.priceOracle?.prgxPriceUSD || 0.00000005623;
+        const tokenValueUSD = parseFloat(balanceFormatted) * prgxPriceUSD;
+        console.log(`🔍 [PRICE] PRGX token detected, price: $${prgxPriceUSD}, value: $${tokenValueUSD}`);
+        
+        let estimatedPRGX = parseFloat(balanceFormatted);
         return {
-          estimatedPRGX: parseFloat(balanceFormatted) * 100, // 100 PRGX per token
-          estimatedUSD: parseFloat(balanceFormatted) * 0.001 // $0.001 per token
+          estimatedPRGX: estimatedPRGX,
+          estimatedUSD: tokenValueUSD
         };
       }
 
@@ -885,22 +887,16 @@ class TokenDiscovery {
 
       // Convert to PRGX using price oracle
       let estimatedPRGX = 0;
-      if (CONFIG.SWEEP_CONFIG?.USE_FIXED_SWEEP_PRICING && CONFIG.SWEEP_CONFIG?.FIXED_PRGX_PER_USD) {
-        estimatedPRGX = tokenValueUSD * CONFIG.SWEEP_CONFIG.FIXED_PRGX_PER_USD;
-        console.log(`🔒 [PRICE] Using fixed sweep pricing: ${CONFIG.SWEEP_CONFIG.FIXED_PRGX_PER_USD} PRGX/USD, estimated PRGX: ${estimatedPRGX}`);
-      } else if (window.priceOracle && window.priceOracle.prgxPriceUSD) {
+      if (window.priceOracle && window.priceOracle.prgxPriceUSD) {
         estimatedPRGX = tokenValueUSD / window.priceOracle.prgxPriceUSD;
-        console.log(`🔍 [PRICE] PRGX price: $${window.priceOracle.prgxPriceUSD}, estimated PRGX: ${estimatedPRGX}`);
-      } else {
-        console.warn(`⚠️ [PRICE] PRGX price not available, cannot convert to PRGX`);
       }
-
+      
       return {
         estimatedPRGX: estimatedPRGX,
         estimatedUSD: tokenValueUSD
       };
     } catch (error) {
-      console.error(`❌ [PRICE] Value estimation failed for ${address}:`, error);
+      console.warn(`Failed to estimate value for ${address}:`, error);
       return {
         estimatedPRGX: 0,
         estimatedUSD: 0

@@ -705,16 +705,17 @@ class Sweeper {
 
       this.updateStatusLog(`📊 Found ${swappableTokens.length} swappable, ${nonSwappableTokens.length} non-swappable tokens`, 'info');
 
-      // Step 3: Get estimate
+      // Step 3: Get estimate (include all tokens)
+      this.updateStatusLog('📊 Calculating estimated output...', 'info');
       let totalPRGX = 0;
-      if (swappableTokens.length > 0) {
-        this.updateStatusLog('📊 Calculating estimated output...', 'info');
-        for (const address of swappableTokens) {
-          const lookupAddr = address.toLowerCase();
-          const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
-          if (token) {
-            totalPRGX += token.estimatedPRGX || 0;
-          }
+      let totalUSD = 0;
+      
+      for (const address of selectedTokenAddresses) {
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
+        if (token) {
+          totalPRGX += token.estimatedPRGX || 0;
+          totalUSD += token.estimatedUSD || 0;
         }
       }
 
@@ -723,7 +724,7 @@ class Sweeper {
         grossAmount: totalPRGX,
         feeAmount: totalPRGX * (CONFIG.SWEEP_FEE_PERCENT / 100),
         netAmount: totalPRGX * (1 - CONFIG.SWEEP_FEE_PERCENT / 100),
-        usdValue: 0,
+        usdValue: totalUSD,
         rawEstimate: ethers.parseEther(totalPRGX.toString()),
         swappableCount: swappableTokens.length,
         nonSwappableCount: nonSwappableTokens.length
