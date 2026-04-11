@@ -167,16 +167,23 @@ class FactoryPage {
     const searchInput = document.getElementById('factorySearch');
     if (searchInput) {
       let debounceTimer;
-      searchInput.addEventListener('input', (e) => {
-        this.search = e.target.value;
+      searchInput.addEventListener('input', async (e) => {
+        const value = e.target.value.trim();
+        this.search = value;
         this.page = 1;
         this.applyFilters();
+        
+        // If it's a valid contract address, look it up
+        if (value.startsWith('0x') && value.length === 42) {
+          console.log('Contract address detected, looking up:', value);
+          await this.lookupTokenByAddress(value);
+        }
         
         // Debounced external search
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-          if (this.search.length >= 3) {
-            this.searchExternal(this.search);
+          if (value.length >= 3 && !value.startsWith('0x')) {
+            this.searchExternal(value);
           }
         }, 500);
       });
@@ -308,6 +315,108 @@ class FactoryPage {
     } catch { return 0; }
   }
 
+  // Discover all tokens from BlockScout (get top tokens by market cap or volume)
+  async discoverTokens() {
+    try {
+      console.log('🔍 Discovering tokens from BlockScout...');
+      
+      // Try to get tokens from BlockScout token list
+      const res = await this.callAPI({ 
+        module: "token", 
+        action: "getTokenList",
+        page: 1,
+        offset: 100
+      });
+      
+      if (res.result && Array.isArray(res.result)) {
+        console.log(`✅ Found ${res.result.length} tokens from BlockScout`);
+        
+        return res.result.map(t => ({
+          symbol: t.symbol || 'UNKNOWN',
+          addr: t.contractAddress || t.address,
+          name: t.name,
+          decimals: t.decimals || '18',
+          source: 'blockscout'
+        })).filter(t => t.addr && t.addr.startsWith('0x'));
+      }
+    } catch (err) {
+      console.log('BlockScout token discovery failed:', err.message);
+    }
+    
+    // Fallback: return known tokens
+    return KNOWN_TOKENS;
+  }
+
+  // Lookup a specific token by address (for user searches)
+  async lookupTokenByAddress(address) {
+    if (!address || !address.startsWith('0x') || address.length !== 42) {
+      console.log('Invalid address format:', address);
+      return null;
+    }
+    
+    // Check if already in list
+    const existing = this.pairs.find(p => p.addr.toLowerCase() === address.toLowerCase());
+    if (existing) {
+      console.log('Token already in list:', existing);
+      return existing;
+    }
+    
+    try {
+      console.log('🔍 Looking up token:', address);
+      
+      const [meta, supply, transfers, holders] = await Promise.all([
+        this.fetchTokenMeta(address),
+        this.fetchSupply(address),
+        this.fetchTransfers(address),
+        this.fetchHolderCount(address),
+      ]);
+      
+      if (!meta) {
+        console.log('No metadata found for address:', address);
+        return null;
+      }
+      
+      const token = {
+        symbol: meta.symbol || 'UNKNOWN',
+        addr: address,
+        name: meta.name || meta.symbol || 'Unknown Token',
+        decimals: meta.decimals || "18",
+        tokenType: meta.type || "ERC-20",
+        meta,
+        supply,
+        transfers,
+        holders,
+        source: 'lookup'
+      };
+      
+      // Add to pairs
+      const pair = {
+        id: this.pairs.length + 1,
+        t0: token.symbol,
+        t1: "WPLS",
+        type: this.classifyPair(token.symbol, "WPLS"),
+        addr: token.addr,
+        name: token.name,
+        decimals: token.decimals,
+        tokenType: token.tokenType,
+        supply: token.supply,
+        transfers: token.transfers,
+        holders: token.holders,
+        source: 'lookup'
+      };
+      
+      this.pairs.push(pair);
+      this.applyFilters();
+      
+      console.log('✅ Added new token:', pair);
+      return pair;
+      
+    } catch (err) {
+      console.error('Token lookup failed:', err);
+      return null;
+    }
+  }
+
   // Main data loader
   async load() {
     this.loading = true;
@@ -318,18 +427,38 @@ class FactoryPage {
       // Fetch price
       await this.fetchPrice();
 
-      // Fetch all token data in parallel
-      const tokenData = await Promise.all(
-        KNOWN_TOKENS.map(async (tok) => {
-          const [meta, supply, transfers, holders] = await Promise.all([
-            this.fetchTokenMeta(tok.addr),
-            this.fetchSupply(tok.addr),
-            this.fetchTransfers(tok.addr),
-            this.fetchHolderCount(tok.addr),
-          ]);
-          return { ...tok, meta, supply, transfers, holders };
-        })
-      );
+      // Try to discover tokens dynamically, fallback to known tokens
+      let tokensToFetch = await this.discoverTokens();
+      
+      // If discovery returned empty or failed, use known tokens
+      if (!tokensToFetch || tokensToFetch.length === 0) {
+        tokensToFetch = KNOWN_TOKENS;
+      }
+
+      // Fetch all token data in parallel (batch in groups of 5 to avoid rate limits)
+      const tokenData = [];
+      const batchSize = 5;
+      
+      for (let i = 0; i < tokensToFetch.length; i += batchSize) {
+        const batch = tokensToFetch.slice(i, i + batchSize);
+        const batchData = await Promise.all(
+          batch.map(async (tok) => {
+            try {
+              const [meta, supply, transfers, holders] = await Promise.all([
+                this.fetchTokenMeta(tok.addr),
+                this.fetchSupply(tok.addr),
+                this.fetchTransfers(tok.addr),
+                this.fetchHolderCount(tok.addr),
+              ]);
+              return { ...tok, meta, supply, transfers, holders };
+            } catch (err) {
+              console.warn('Failed to fetch token:', tok.addr, err.message);
+              return { ...tok, meta: null, supply: "0", transfers: 0, holders: 0 };
+            }
+          })
+        );
+        tokenData.push(...batchData);
+      }
 
       // Build pair rows
       const rows = [];
