@@ -114,6 +114,13 @@ class Sweeper {
         );
 
         const prgxAmount = Number(ethers.formatEther(estimate));
+        
+        // If contract returns 0, use fallback
+        if (prgxAmount === 0 || isNaN(prgxAmount)) {
+          console.warn('⚠️ Contract returned 0, using fallback estimation');
+          throw new Error('Contract returned zero - using fallback');
+        }
+        
         const feeAmount = prgxAmount * (CONFIG.SWEEP_FEE_PERCENT / 100);
         const netAmount = prgxAmount - feeAmount;
 
@@ -145,7 +152,9 @@ class Sweeper {
         let nonSwappableCount = 0;
         
         for (const address of tokenAddresses) {
-          const token = window.tokenDiscovery.discoveredTokens.get(address);
+          // Try both cases - discovered tokens stored as lowercase
+          const lookupAddr = address.toLowerCase();
+          const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
           if (token) {
             totalUSD += token.estimatedUSD || 0;
             totalPRGX += token.estimatedPRGX || 0;
