@@ -156,14 +156,27 @@
         </div>
         
         <hr class="divider">
-        
+
+        <!-- Auto-stake toggle -->
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(0, 209, 140, 0.1); border: 1px solid rgba(0, 209, 140, 0.3); border-radius: var(--r-md);">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="autoStakeToggle" checked onchange="sweeper.toggleAutoStake(this.checked)" style="width: 18px; height: 18px; accent-color: var(--green);">
+            <span style="font-size: 0.9rem; color: var(--text-1);">
+              <strong>🔄 Auto-Stake PRGX</strong>
+            </span>
+          </label>
+          <p style="margin: 0.5rem 0 0 26px; font-size: 0.75rem; color: var(--text-3);">
+            Automatically stake received PRGX to earn rewards. You can unstake anytime from the Stake page.
+          </p>
+        </div>
+
         <button class="btn-primary" id="purgeBtn" disabled onclick="sweeper.initiateSweep()" style="width: 100%; font-size: 1.1rem;">
           🔥 PURGE SELECTED
         </button>
-        
+
         <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-input); border-radius: var(--r-md); font-size: 0.85rem; color: var(--text-3);">
           <p style="margin-bottom: 0.5rem;">💡 <strong>Tip:</strong> Select multiple dust tokens to maximize your PRGX output.</p>
-          <p>All selected tokens will be swept in a single transaction.</p>
+          <p>All selected tokens will be swept and PRGX will be auto-staked.</p>
         </div>
       </div>
     </div>

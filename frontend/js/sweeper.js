@@ -7,6 +7,15 @@ class Sweeper {
     this.isSweeping = false;
     this.selectedTokens = [];
     this.approvalStatus = new Map();
+    this.autoStakeEnabled = true; // Default to enabled
+  }
+
+  toggleAutoStake(enabled) {
+    this.autoStakeEnabled = enabled;
+    console.log('Auto-stake toggled:', enabled);
+    if (window.wallet?.showToast) {
+      window.wallet.showToast(`Auto-stake ${enabled ? 'enabled' : 'disabled'}`, 'info');
+    }
   }
 
   // ================================================================
@@ -56,10 +65,13 @@ class Sweeper {
       this.updateStatusLog(`✅ Sweep successful! Received ${estimate.netAmount} PRGX`, 'success');
       this.showTransactionLink(tx.hash);
 
-      // Step 8: Refresh data
+      // Step 8: Auto-stake PRGX
+      const stakedAmount = await this.autoStakePRGX(estimate.netAmount);
+
+      // Step 9: Refresh data
       await this.postSweepRefresh();
 
-      return { success: true, txHash: tx.hash, prgxReceived: estimate.netAmount };
+      return { success: true, txHash: tx.hash, prgxReceived: estimate.netAmount, stakedAmount };
     } catch (error) {
       this.updateStatusLog(`❌ Sweep failed: ${error.message}`, 'error');
       throw error;
@@ -761,18 +773,137 @@ class Sweeper {
         }
       }
 
-      // Step 8: Success
-      this.updateStatusLog(`✅ Sweep-to-wallet completed!`, 'success');
+      // Step 8: Calculate total PRGX received and auto-stake
+      let totalPRGXReceived = 0;
+      for (const address of selectedTokenAddresses) {
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
+        if (token) {
+          totalPRGXReceived += token.estimatedPRGX || 0;
+        }
+      }
+      const netPRGX = totalPRGXReceived * (1 - CONFIG.SWEEP_FEE_PERCENT / 100);
+      const stakedAmount = await this.autoStakePRGX(netPRGX);
 
-      // Step 9: Refresh data
+      // Step 9: Success
+      this.updateStatusLog(`✅ Sweep-to-wallet completed! ${stakedAmount > 0 ? stakedAmount.toFixed(4) + ' PRGX auto-staked' : ''}`, 'success');
+
+      // Step 10: Refresh data
       await this.postSweepRefresh();
 
-      return { success: true, message: 'Sweep-to-wallet completed' };
+      return { success: true, message: 'Sweep-to-wallet completed', stakedAmount };
     } catch (error) {
       this.updateStatusLog(`❌ Sweep-to-wallet failed: ${error.message}`, 'error');
       throw error;
     } finally {
       this.isSweeping = false;
+    }
+  }
+
+  // ================================================================
+  // AUTO-STAKE PRGX
+  // ================================================================
+  async autoStakePRGX(amountPRGX) {
+    if (!amountPRGX || amountPRGX <= 0) {
+      console.log('No PRGX to stake');
+      return 0;
+    }
+
+    // Check if auto-stake is enabled
+    if (!this.autoStakeEnabled) {
+      this.updateStatusLog('ℹ️ Auto-stake disabled. PRGX remains in your wallet.', 'info');
+      return 0;
+    }
+
+    try {
+      this.updateStatusLog(`🔄 Auto-staking ${amountPRGX.toFixed(4)} PRGX...`, 'info');
+
+      // Check if staking contract is available
+      if (!CONFIG.CONTRACTS.STAKING || CONFIG.CONTRACTS.STAKING === '0x0000000000000000000000000000000000000000') {
+        this.updateStatusLog('⚠️ Staking contract not configured, skipping auto-stake', 'warning');
+        return 0;
+      }
+
+      // Check and handle PRGX approval for staking
+      const needsApproval = await this.checkPRGXStakingApproval(amountPRGX);
+      if (needsApproval) {
+        this.updateStatusLog('📝 Approving PRGX for staking...', 'info');
+        await this.approvePRGXForStaking(amountPRGX);
+      }
+
+      // Execute stake
+      const stakingContract = new ethers.Contract(
+        CONFIG.CONTRACTS.STAKING,
+        CONFIG.ABIS.STAKING,
+        window.wallet.signer
+      );
+
+      const amountWei = ethers.parseEther(amountPRGX.toString());
+      const tx = await stakingContract.stake(amountWei);
+
+      this.updateStatusLog(`⏳ Stake transaction: ${tx.hash}`, 'pending');
+
+      const receipt = await tx.wait();
+
+      this.updateStatusLog(`✅ Successfully staked ${amountPRGX.toFixed(4)} PRGX!`, 'success');
+      window.wallet.showToast(`Auto-staked ${amountPRGX.toFixed(4)} PRGX!`, 'success');
+
+      // Refresh staking dashboard if available
+      if (window.stakingManager) {
+        await window.stakingManager.loadDashboard();
+      }
+
+      return amountPRGX;
+
+    } catch (error) {
+      console.error('Auto-stake failed:', error);
+      this.updateStatusLog(`⚠️ Auto-stake failed: ${error.message}. PRGX remains in your wallet.`, 'warning');
+      window.wallet.showToast('Auto-stake failed. PRGX remains in wallet.', 'warning');
+      return 0;
+    }
+  }
+
+  async checkPRGXStakingApproval(amount) {
+    try {
+      const prgxContract = new ethers.Contract(
+        CONFIG.CONTRACTS.PRGX_TOKEN,
+        CONFIG.ABIS.ERC20,
+        window.wallet.provider
+      );
+
+      const allowance = await prgxContract.allowance(
+        window.wallet.address,
+        CONFIG.CONTRACTS.STAKING
+      );
+
+      const amountWei = ethers.parseEther(amount.toString());
+      return allowance < amountWei;
+    } catch (error) {
+      console.warn('PRGX staking approval check failed:', error);
+      return true; // Assume approval needed
+    }
+  }
+
+  async approvePRGXForStaking(amount) {
+    try {
+      const prgxContract = new ethers.Contract(
+        CONFIG.CONTRACTS.PRGX_TOKEN,
+        CONFIG.ABIS.ERC20,
+        window.wallet.signer
+      );
+
+      const amountWei = ethers.parseEther(amount.toString());
+      const tx = await prgxContract.approve(CONFIG.CONTRACTS.STAKING, amountWei);
+
+      this.updateStatusLog(`⏳ PRGX approval TX: ${tx.hash}`, 'pending');
+
+      const receipt = await tx.wait();
+
+      this.updateStatusLog('✅ PRGX approved for staking', 'success');
+
+    } catch (error) {
+      console.error('PRGX staking approval failed:', error);
+      throw new Error(`PRGX approval failed: ${error.message}`);
     }
   }
 
