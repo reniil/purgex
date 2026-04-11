@@ -38,16 +38,15 @@
                 </div>
               </td>
               <td class="mono">
-                <span id="prgxTokenAddress">${(window.CONFIG?.CONTRACTS?.PRGX_TOKEN || '').slice(0, 8)}...${(window.CONFIG?.CONTRACTS?.PRGX_TOKEN || '').slice(-6)}</span>
+                <span id="prgxTokenAddress">Loading...</span>
               </td>
               <td>
                 <span class="badge badge-green">✅ Verified</span>
               </td>
               <td>
                 <div style="display: flex; gap: 0.5rem;">
-                  <button class="btn-icon copy-btn" data-copy="${window.CONFIG?.CONTRACTS?.PRGX_TOKEN || ''}" title="Copy address">📋</button>
-                  <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.PRGX_TOKEN || ''}" 
-                     target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
+                  <button class="btn-icon copy-btn" data-contract-type="prgx" title="Copy address">📋</button>
+                  <a href="#" data-contract-type="prgx" target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
                 </div>
               </td>
             </tr>
@@ -63,16 +62,15 @@
                 </div>
               </td>
               <td class="mono">
-                <span id="sweeperAddress">${(window.CONFIG?.CONTRACTS?.SWEEPER || '').slice(0, 8)}...${(window.CONFIG?.CONTRACTS?.SWEEPER || '').slice(-6)}</span>
+                <span id="sweeperAddress">Loading...</span>
               </td>
               <td>
                 <span class="badge badge-green">✅ Verified</span>
               </td>
               <td>
                 <div style="display: flex; gap: 0.5rem;">
-                  <button class="btn-icon copy-btn" data-copy="${window.CONFIG?.CONTRACTS?.SWEEPER || ''}" title="Copy address">📋</button>
-                  <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.SWEEPER || ''}" 
-                     target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
+                  <button class="btn-icon copy-btn" data-contract-type="sweeper" title="Copy address">📋</button>
+                  <a href="#" data-contract-type="sweeper" target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
                 </div>
               </td>
             </tr>
@@ -88,16 +86,15 @@
                 </div>
               </td>
               <td class="mono">
-                <span id="stakingAddress">${(window.CONFIG?.CONTRACTS?.STAKING || '').slice(0, 8)}...${(window.CONFIG?.CONTRACTS?.STAKING || '').slice(-6)}</span>
+                <span id="stakingAddress">Loading...</span>
               </td>
               <td>
                 <span class="badge badge-green">✅ Verified</span>
               </td>
               <td>
                 <div style="display: flex; gap: 0.5rem;">
-                  <button class="btn-icon copy-btn" data-copy="${window.CONFIG?.CONTRACTS?.STAKING || ''}" title="Copy address">📋</button>
-                  <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.STAKING || ''}" 
-                     target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
+                  <button class="btn-icon copy-btn" data-contract-type="staking" title="Copy address">📋</button>
+                  <a href="#" data-contract-type="staking" target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
                 </div>
               </td>
             </tr>
@@ -113,16 +110,15 @@
                 </div>
               </td>
               <td class="mono">
-                <span id="multisigAddress">${(window.CONFIG?.CONTRACTS?.MULTISIG_TREASURY || '').slice(0, 8)}...${(window.CONFIG?.CONTRACTS?.MULTISIG_TREASURY || '').slice(-6)}</span>
+                <span id="multisigAddress">Loading...</span>
               </td>
               <td>
                 <span class="badge badge-purple">✅ 3-of-5</span>
               </td>
               <td>
                 <div style="display: flex; gap: 0.5rem;">
-                  <button class="btn-icon copy-btn" data-copy="${window.CONFIG?.CONTRACTS?.MULTISIG_TREASURY || ''}" title="Copy address">📋</button>
-                  <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.MULTISIG_TREASURY || ''}" 
-                     target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
+                  <button class="btn-icon copy-btn" data-contract-type="multisig" title="Copy address">📋</button>
+                  <a href="#" data-contract-type="multisig" target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
                 </div>
               </td>
             </tr>
@@ -138,16 +134,15 @@
                 </div>
               </td>
               <td class="mono">
-                <span id="lpTokenAddress">${(window.CONFIG?.CONTRACTS?.LP_TOKEN || '').slice(0, 8)}...${(window.CONFIG?.CONTRACTS?.LP_TOKEN || '').slice(-6)}</span>
+                <span id="lpTokenAddress">Loading...</span>
               </td>
               <td>
                 <span class="badge badge-red">🔒 Locked</span>
               </td>
               <td>
                 <div style="display: flex; gap: 0.5rem;">
-                  <button class="btn-icon copy-btn" data-copy="${window.CONFIG?.CONTRACTS?.LP_TOKEN || ''}" title="Copy address">📋</button>
-                  <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.LP_TOKEN || ''}" 
-                     target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
+                  <button class="btn-icon copy-btn" data-contract-type="lptoken" title="Copy address">📋</button>
+                  <a href="#" data-contract-type="lptoken" target="_blank" class="btn-icon" title="View on PulseScan">🔍</a>
                 </div>
               </td>
             </tr>
@@ -293,20 +288,17 @@
             <h4 style="margin-bottom: 1rem; color: var(--text-2);">🌐 Web3 Interfaces</h4>
             <div style="background: var(--bg-input); padding: 1.5rem; border-radius: var(--r-md);">
               <div style="margin-bottom: 1rem;">
-                <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS?.PRGX_TOKEN || ''}" 
-                   target="_blank" class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;">
+                <a href="#" id="prgxExplorerLink" target="_blank" class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;">
                   PRGX Token on PulseScan
                 </a>
               </div>
               <div style="margin-bottom: 1rem;">
-                <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS::SWEEPER || ''}" 
-                   target="_blank" class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;">
+                <a href="#" id="sweeperExplorerLink" target="_blank" class="btn-secondary" style="width: 100%; margin-bottom: 0.5rem;">
                   Sweeper on PulseScan
                 </a>
               </div>
               <div>
-                <a href="${window.CONFIG?.NETWORK?.explorer || '#'}/address/${window.CONFIG?.CONTRACTS::STAKING || ''}" 
-                   target="_blank" class="btn-secondary" style="width: 100%;">
+                <a href="#" id="stakingExplorerLink" target="_blank" class="btn-secondary" style="width: 100%;">
                   Staking on PulseScan
                 </a>
               </div>

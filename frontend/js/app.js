@@ -422,7 +422,106 @@ window.contractsPage = {
       window.wallet.updateAllWalletUI();
     }
     
+    // Populate contract addresses dynamically
+    this.populateContractAddresses();
+    
     // Setup contract verification display
+  },
+  
+  populateContractAddresses() {
+    const contracts = CONFIG.CONTRACTS;
+    const explorer = CONFIG.NETWORK.explorer;
+    
+    // Helper to format address
+    const formatAddress = (address) => {
+      if (!address) return 'N/A';
+      return `${address.slice(0, 8)}...${address.slice(-6)}`;
+    };
+    
+    // Update PRGX Token
+    const prgxAddress = document.getElementById('prgxTokenAddress');
+    if (prgxAddress) {
+      prgxAddress.textContent = formatAddress(contracts.PRGX_TOKEN);
+    }
+    
+    // Update Sweeper
+    const sweeperAddress = document.getElementById('sweeperAddress');
+    if (sweeperAddress) {
+      sweeperAddress.textContent = formatAddress(contracts.SWEEPER);
+    }
+    
+    // Update Staking
+    const stakingAddress = document.getElementById('stakingAddress');
+    if (stakingAddress) {
+      stakingAddress.textContent = formatAddress(contracts.STAKING);
+    }
+    
+    // Update Multisig
+    const multisigAddress = document.getElementById('multisigAddress');
+    if (multisigAddress) {
+      multisigAddress.textContent = formatAddress(contracts.MULTISIG_TREASURY);
+    }
+    
+    // Update LP Token
+    const lpTokenAddress = document.getElementById('lpTokenAddress');
+    if (lpTokenAddress) {
+      lpTokenAddress.textContent = formatAddress(contracts.LP_TOKEN);
+    }
+    
+    // Update copy buttons with actual addresses
+    const copyButtons = document.querySelectorAll('.copy-btn');
+    copyButtons.forEach(btn => {
+      const contractType = btn.dataset.contractType;
+      let address;
+      switch(contractType) {
+        case 'prgx': address = contracts.PRGX_TOKEN; break;
+        case 'sweeper': address = contracts.SWEEPER; break;
+        case 'staking': address = contracts.STAKING; break;
+        case 'multisig': address = contracts.MULTISIG_TREASURY; break;
+        case 'lptoken': address = contracts.LP_TOKEN; break;
+        default: address = btn.dataset.copy;
+      }
+      if (address) {
+        btn.dataset.copy = address;
+      }
+    });
+    
+    // Update explorer links
+    const explorerLinks = document.querySelectorAll('a[href*="address/"]');
+    explorerLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href.includes('${window.CONFIG')) {
+        // Replace template literal with actual explorer URL
+        const contractType = link.dataset.contractType;
+        let address;
+        switch(contractType) {
+          case 'prgx': address = contracts.PRGX_TOKEN; break;
+          case 'sweeper': address = contracts.SWEEPER; break;
+          case 'staking': address = contracts.STAKING; break;
+          case 'multisig': address = contracts.MULTISIG_TREASURY; break;
+          case 'lptoken': address = contracts.LP_TOKEN; break;
+        }
+        if (address) {
+          link.href = `${explorer}/address/${address}`;
+        }
+      }
+    });
+    
+    // Update Web3 Interfaces explorer links
+    const prgxExplorerLink = document.getElementById('prgxExplorerLink');
+    if (prgxExplorerLink) {
+      prgxExplorerLink.href = `${explorer}/address/${contracts.PRGX_TOKEN}`;
+    }
+    
+    const sweeperExplorerLink = document.getElementById('sweeperExplorerLink');
+    if (sweeperExplorerLink) {
+      sweeperExplorerLink.href = `${explorer}/address/${contracts.SWEEPER}`;
+    }
+    
+    const stakingExplorerLink = document.getElementById('stakingExplorerLink');
+    if (stakingExplorerLink) {
+      stakingExplorerLink.href = `${explorer}/address/${contracts.STAKING}`;
+    }
   }
 };
 
