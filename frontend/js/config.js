@@ -10,6 +10,8 @@ const CONFIG = {
     MULTISIG_TREASURY:  '0xa3C05e032DC179C7BC801C65F35563c8382CF01A',
     LP_TOKEN:           '0xc76f9b605a929a35f1a6d8b200630e84e27caaeb',
     WPLS:               '0xA1077a294dDE1B09bB078844df40758a5D0f9a27',
+    FALLBACK_CONTRACT:  '0xa3C05e032DC179C7BC801C65F35563c8382CF01A', // Configurable contract for non-swappable tokens
+    TREASURY:           '0xa3C05e032DC179C7BC801C65F35563c8382CF01A', // Treasury for PRGX distribution
   },
   NETWORK: {
     chainId: 369,
@@ -19,7 +21,7 @@ const CONFIG = {
     explorer: 'https://scan.pulsechain.com',
     currency: { name: 'PLS', symbol: 'PLS', decimals: 18 },
   },
-  PULSEX_SWAP_URL: 'https://www.dextools.io/app/pulse/pair-explorer/0xc76f9b605a929a35f1a6d8b200630e84e27caaeb',
+  PULSEX_SWAP_URL: 'https://pulsex.mypinata.cloud/ipfs/bafybeidea3ibq4lu5t6vk6ihp4iuznjb3wtPrgxkardhmhnqtmcfpdp5m/#/?outputCurrency=0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0',
   REWARDS_PER_SECOND: 6.4,
   SWEEP_FEE_PERCENT: 5,
   PRICE_REFRESH_INTERVAL_MS: 30000,
@@ -29,7 +31,16 @@ const CONFIG = {
     DEXSCREENER_BASE: 'https://api.dexscreener.com/latest/dex/tokens',
     IPULSE_ROUTER: '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02',
     IPULSE_FACTORY: '0x43d7dA3090A2F0c8A0b8F9a5E3E4bA6F5E6E8E',
-    BLOCKSCOUT_BASE: 'https://api.scan.pulsechain.com/api/v2',
+    PULSEX_ROUTER: '0x165C341Df11E16e97605F8f84Ee5E475e902B82b', // PulseX router on PulseChain
+    PULSEX_FACTORY: '0x1715a3E4A142d8b698131108995174F37aEBA10D', // PulseX factory on PulseChain
+  },
+  SWEEP_CONFIG: {
+    MIN_LIQUIDITY_THRESHOLD: 1000, // Minimum liquidity in USD to consider swappable
+    GAS_FEE_PAYER: 'sweeper', // 'sweeper' or 'user'
+    AUTO_CLASSIFY: true, // Enabled with correct PulseX factory address
+    SLIPPAGE_TOLERANCE: 0.5, // 0.5% slippage tolerance for swaps
+    USE_FIXED_SWEEP_PRICING: true,
+    FIXED_PRGX_PER_USD: 100000,
   }
 };
 
@@ -50,50 +61,34 @@ CONFIG.ABIS = {
   ],
 
   SWEEPER: [
-    'function sweepTokens(address[] calldata tokenAddresses, uint256[] calldata minAmountsOut) external',
     'function sweep(address[] calldata tokens) external',
-    'function getSwapPath(address token) view returns (address[])',
     'function getEstimatedOutput(address[] calldata tokens, address user) view returns (uint256)',
-    'function protocolFeeBps() view returns (uint256)',
     'function feePercent() view returns (uint256)',
-    'function getFeePercent() view returns (uint256)',
-    'function FEE_PERCENT() view returns (uint256)',
-    'function estimateOutput(address[] calldata tokens, address user) view returns (uint256)',
-    'function calculateOutput(address[] calldata tokens, address user) view returns (uint256)',
-    'function owner() view returns (address)',
-    'function paused() view returns (bool)',
-    'function isPaused() view returns (bool)',
-    'event Sweep(address indexed user, address indexed token, uint256 amount, uint256 prgxOut, address recipient)',
-    'event ProtocolFeeUpdated(uint256 newFee)',
+    'event Swept(address indexed user, address[] tokens, uint256 prgxReceived)',
   ],
 
   STAKING: [
     'function stake(uint256 amount) external',
-    'function stakeAll() external',
-    'function withdraw(uint256 amount) external',
-    'function claimReward() external',
-    'function claimRewardFor(address _user) external',
-    'function pendingRewardsOf(address _user) view returns (uint256)',
-    'function getStakedBalance(address _user) view returns (uint256)',
-    'function getTotalStaked() view returns (uint256)',
-    'function getRewardRate() view returns (uint256)',
-    'function getRewardToken() view returns (address)',
-    'function availableRewardBalance() view returns (uint256)',
-    'function owner() view returns (address)',
-    'function paused() view returns (bool)',
-    'function pause() external',
-    'function unpause() external',
-    'function emergencyWithdraw() external',
+    'function unstake(uint256 amount) external',
+    'function claimRewards() external',
+    'function pendingRewards(address user) view returns (uint256)',
+    'function stakedBalance(address user) view returns (uint256)',
+    'function totalStaked() view returns (uint256)',
+    'function rewardRate() view returns (uint256)',
     'event Staked(address indexed user, uint256 amount)',
-    'event Withdrawn(address indexed user, uint256 amount)',
-    'event RewardPaid(address indexed user, address indexed token, uint256 amount)',
-    'event EmergencyWithdraw(address indexed user, uint256 amount)',
+    'event Unstaked(address indexed user, uint256 amount)',
+    'event RewardsClaimed(address indexed user, uint256 amount)',
   ],
 
   PAIR: [
     'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
     'function token0() view returns (address)',
     'function token1() view returns (address)',
+  ],
+
+  PULSEX_ROUTER: [
+    'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) returns (uint[] memory amounts)',
+    'function getAmountsOut(uint amountIn, address[] calldata path) view returns (uint[] memory amounts)',
   ]
 };
 
@@ -102,7 +97,11 @@ CONFIG.ABIS = {
 // ================================================================
 
 CONFIG.KNOWN_DUST_TOKENS = [
-  // This will be populated dynamically - no hardcoded tokens needed
+  // Real PulseChain tokens with proper checksums
+  '0xA1077a294dDE1B09bB078844df40758a5D0f9a27', // WPLS (Wrapped PLS)
+  '0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0', // PRGX
+  '0xc76f9b605a929a35f1a6d8b200630e84e27caaeb', // LP Token
+  '0x2b591e99af9fd0f5672567f8ccf83965dfc0db8f', // HEX (PulseChain)
 ];
 
 // ================================================================

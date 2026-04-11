@@ -111,9 +111,8 @@ class Router {
       
       // Check if wallet is required
       if (route.requiresWallet && !window.wallet?.isConnected) {
-        console.log('Wallet required, showing prompt');
-        // Show wallet connection prompt
-        await this.loadPage(route.file, route.title, route.init, true);
+        console.log('Wallet required, but loading page without injected prompt');
+        await this.loadPage(route.file, route.title, route.init, false);
       } else {
         console.log('Loading page normally');
         // Load page normally

@@ -37,45 +37,130 @@ class PriceOracle {
   }
 
   async _fetchPRGXPriceInternal() {
-    // SOURCE 1: RouteScan API
+    console.log('🔍 [PRICE] Starting PRGX price fetch...');
+
+    // SOURCE 1: PulseCoinList with CORS proxy (preferred)
     try {
-      const price = await this.fetchFromRouteScan();
+      console.log('🔍 [PRICE] Trying PulseCoinList with CORS proxy...');
+      const price = await this.fetchFromPulseCoinList(CONFIG.CONTRACTS.PRGX_TOKEN);
       if (price > 0) {
-        console.log('PRGX price from RouteScan:', price);
+        console.log('✅ [PRICE] PRGX price from PulseCoinList:', price);
         return price;
       }
     } catch (error) {
-      console.warn('RouteScan price fetch failed:', error);
+      console.warn('⚠️ [PRICE] PulseCoinList price fetch failed:', error);
     }
-    
+
     // SOURCE 2: DEXScreener API
     try {
+      console.log('🔍 [PRICE] Trying DEXScreener API...');
       const price = await this.fetchFromDexScreener();
       if (price > 0) {
-        console.log('PRGX price from DEXScreener:', price);
+        console.log('✅ [PRICE] PRGX price from DEXScreener:', price);
         return price;
       }
     } catch (error) {
-      console.warn('DEXScreener price fetch failed:', error);
+      console.warn('⚠️ [PRICE] DEXScreener price fetch failed:', error);
     }
-    
-    // SOURCE 3: Calculate from LP reserves
+
+    // SOURCE 3: RouteScan API
     try {
+      console.log('🔍 [PRICE] Trying RouteScan API...');
+      const price = await this.fetchFromRouteScan();
+      if (price > 0) {
+        console.log('✅ [PRICE] PRGX price from RouteScan:', price);
+        return price;
+      }
+    } catch (error) {
+      console.warn('⚠️ [PRICE] RouteScan price fetch failed:', error);
+    }
+
+    // SOURCE 4: Calculate from LP reserves
+    try {
+      console.log('🔍 [PRICE] Trying LP calculation...');
       const price = await this.calculateFromLP();
       if (price > 0) {
-        console.log('PRGX price from LP calculation:', price);
+        console.log('✅ [PRICE] PRGX price from LP calculation:', price);
         return price;
       }
     } catch (error) {
-      console.warn('LP calculation failed:', error);
+      console.warn('⚠️ [PRICE] LP calculation failed:', error);
     }
-    
+
     // All sources failed
+    console.error('❌ [PRICE] All price sources failed');
     throw new Error('Unable to fetch PRGX price from any source');
   }
 
   // ================================================================
-  // SOURCE 1: RouteScan API (CORS-friendly alternative)
+  // SOURCE 1: PulseCoinList with CORS proxy
+  // ================================================================
+  async fetchFromPulseCoinList(tokenAddress) {
+    // Use corsproxy.io CORS proxy (more reliable than allorigins.win)
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(`https://pulsecoinlist.com/token/${tokenAddress}`)}`;
+    console.log(`🔍 [PRICE] Fetching from PulseCoinList via proxy: ${proxyUrl}`);
+
+    try {
+      const response = await fetch(proxyUrl);
+
+      if (!response.ok) {
+        throw new Error(`PulseCoinList proxy request failed: ${response.status}`);
+      }
+
+      const html = await response.text();
+
+      if (!html) {
+        throw new Error('No HTML content from proxy');
+      }
+
+      // Try to extract price from __NEXT_DATA__ JSON script tag (most accurate)
+      const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">({.+?})<\/script>/s);
+      if (nextDataMatch) {
+        try {
+          const jsonData = JSON.parse(nextDataMatch[1]);
+          const price = jsonData?.props?.pageProps?.coinInfo?.price;
+          if (price && parseFloat(price) > 0) {
+            console.log(`✅ [PRICE] PulseCoinList price from __NEXT_DATA__: $${price}`);
+            return parseFloat(price);
+          }
+        } catch (jsonError) {
+          console.warn(`⚠️ [PRICE] Failed to parse __NEXT_DATA__ JSON:`, jsonError);
+        }
+      }
+
+      // Fallback: Try to extract price from OG description
+      const ogDescriptionMatch = html.match(/<meta property="og:description" content="([^"]*?\$[\d,.]+[^"]*?)"/i);
+      if (ogDescriptionMatch) {
+        const priceMatch = ogDescriptionMatch[1].match(/\$([\d,.]+)/);
+        if (priceMatch) {
+          const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+          if (price > 0) {
+            console.log(`✅ [PRICE] PulseCoinList price from OG description: $${price}`);
+            return price;
+          }
+        }
+      }
+
+      // Fallback: Try to find price in HTML content
+      const pricePattern = /\$[\d,.]+\s*USD/i;
+      const priceMatch = html.match(pricePattern);
+      if (priceMatch) {
+        const price = parseFloat(priceMatch[0].replace(/[\$\s,USD]/g, ''));
+        if (price > 0) {
+          console.log(`✅ [PRICE] PulseCoinList price from HTML: $${price}`);
+          return price;
+        }
+      }
+
+      throw new Error('No price data found in PulseCoinList page');
+    } catch (error) {
+      console.warn('⚠️ [PRICE] PulseCoinList fetch failed:', error);
+      throw error;
+    }
+  }
+
+  // ================================================================
+  // SOURCE 2: DEXScreener API
   // ================================================================
   async fetchFromRouteScan() {
     const response = await fetch(
@@ -216,42 +301,6 @@ class PriceOracle {
   }
 
   // ================================================================
-  // FETCH TOKEN PRICE — Generic token price lookup
-  // ================================================================
-  async fetchTokenPrice(tokenAddress) {
-    try {
-      const response = await fetch(
-        `${CONFIG.APIS.DEXSCREENER_BASE}/${tokenAddress}`
-      );
-      
-      if (!response.ok) {
-        throw new Error('Token price fetch failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data.pairs && data.pairs.length > 0) {
-        const pair = data.pairs[0];
-        if (pair.priceUsd) {
-          return parseFloat(pair.priceUsd);
-        }
-      }
-      
-      throw new Error('No token price data found');
-    } catch (error) {
-      console.warn(`Token price fetch failed for ${tokenAddress}:`, error.message);
-      return 0;
-    }
-  }
-  
-  // Synchronous price getter with cache
-  getTokenPrice(tokenAddress) {
-    // Check cache first (we'll need to implement cache)
-    // For now return 0 and let async fetch populate
-    return 0;
-  }
-
-  // ================================================================
   // AUTO-REFRESH
   // ================================================================
   startAutoRefresh() {
@@ -310,8 +359,23 @@ class PriceOracle {
   // ================================================================
   formatUSD(amount) {
     if (!amount || amount === 0) return '$0.000000';
-    
-    return '$' + Number(amount).toLocaleString('en-US', {
+
+    const num = Number(amount);
+    const abs = Math.abs(num);
+
+    // For very small values, show more precision to avoid rounding to $0.000000
+    if (abs > 0 && abs < 1e-9) {
+      return '$' + num.toExponential(6);
+    }
+
+    if (abs > 0 && abs < 1e-6) {
+      return '$' + num.toLocaleString('en-US', {
+        minimumFractionDigits: 10,
+        maximumFractionDigits: 10
+      });
+    }
+
+    return '$' + num.toLocaleString('en-US', {
       minimumFractionDigits: 6,
       maximumFractionDigits: 6
     });
