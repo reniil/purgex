@@ -1,5 +1,5 @@
 // ================================================================
-// SWEEPER — Dust sweep logic with approval flow
+// SWEEPER - Dust sweep logic with approval flow
 // ================================================================
 
 class Sweeper {
@@ -16,50 +16,50 @@ class Sweeper {
     if (!window.wallet?.isConnected) {
       throw new Error('Wallet not connected');
     }
-    
+
     if (selectedTokenAddresses.length === 0) {
       throw new Error('No tokens selected for sweep');
     }
-    
+
     this.isSweeping = true;
     this.selectedTokens = selectedTokenAddresses;
     this.approvalStatus.clear();
-    
+
     try {
       // Step 1: Validate
       this.updateStatusLog('🔍 Validating sweep parameters...', 'info');
       await this.validateSweep(selectedTokenAddresses);
-      
+
       // Step 2: Get estimate
       this.updateStatusLog('📊 Calculating estimated output...', 'info');
       const estimate = await this.getEstimate(selectedTokenAddresses);
-      
+
       // Step 3: Show confirmation modal
       const confirmed = await this.showConfirmationModal(selectedTokenAddresses, estimate);
       if (!confirmed) {
         throw new Error('Sweep cancelled by user');
       }
-      
+
       // Step 4: Handle approvals
       this.updateStatusLog('📋 Checking token approvals...', 'info');
       await this.handleApprovals(selectedTokenAddresses);
-      
+
       // Step 5: Execute sweep
       this.updateStatusLog('🚀 Executing sweep transaction...', 'pending');
       const tx = await this.executeSweepTransaction(selectedTokenAddresses);
-      
+
       // Step 6: Wait for confirmation
       this.updateStatusLog(`⏳ Waiting for confirmation... TX: ${tx.hash}`, 'pending');
       const receipt = await tx.wait();
-      
+
       // Step 7: Success
-      this.updateStatusLog(`✅ Sweep successful! Received ${estimate.prgxAmount} PRGX`, 'success');
+      this.updateStatusLog(`✅ Sweep successful! Received ${estimate.netAmount} PRGX`, 'success');
       this.showTransactionLink(tx.hash);
-      
+
       // Step 8: Refresh data
       await this.postSweepRefresh();
-      
-      return { success: true, txHash: tx.hash, prgxReceived: estimate.prgxAmount };
+
+      return { success: true, txHash: tx.hash, prgxReceived: estimate.netAmount };
     } catch (error) {
       this.updateStatusLog(`❌ Sweep failed: ${error.message}`, 'error');
       throw error;
@@ -76,12 +76,12 @@ class Sweeper {
     if (!window.wallet?.isConnected) {
       throw new Error('Wallet not connected');
     }
-    
+
     // Check network
     if (window.wallet.chainId !== CONFIG.NETWORK.chainId) {
       throw new Error('Wrong network. Please switch to PulseChain');
     }
-    
+
     // Check if we have token data
     for (const address of tokenAddresses) {
       const token = window.tokenDiscovery.discoveredTokens.get(address);
@@ -99,29 +99,29 @@ class Sweeper {
       if (!window.wallet?.provider) {
         throw new Error('Wallet provider not available');
       }
-      
+
       // Try to get real estimate from contract first
       const sweeperContract = new ethers.Contract(
         CONFIG.CONTRACTS.SWEEPER,
         CONFIG.ABIS.SWEEPER,
         window.wallet.provider
       );
-      
+
       try {
         const estimate = await sweeperContract.getEstimatedOutput(
           tokenAddresses,
           window.wallet.address
         );
-        
+
         const prgxAmount = Number(ethers.formatEther(estimate));
         const feeAmount = prgxAmount * (CONFIG.SWEEP_FEE_PERCENT / 100);
         const netAmount = prgxAmount - feeAmount;
-        
-        const usdValue = window.priceOracle ? 
+
+        const usdValue = window.priceOracle ?
           window.priceOracle.prgxToUSD(netAmount) : 0;
-        
+
         console.log('✅ Real contract estimate successful:', { prgxAmount, feeAmount, netAmount });
-        
+
         return {
           grossAmount: prgxAmount,
           feeAmount: feeAmount,
@@ -132,27 +132,47 @@ class Sweeper {
       } catch (contractError) {
         console.warn('Contract call failed, using fallback estimation:', contractError);
         
+        // Ensure price oracle has the PRGX price
+        if (window.priceOracle && !window.priceOracle.prgxPriceUSD) {
+          console.log('⏳ Fetching PRGX price...');
+          await window.priceOracle.fetchPRGXPrice();
+        }
+        
         // Fallback estimation: sum up token values
         let totalUSD = 0;
         let totalPRGX = 0;
+        let swappableCount = 0;
+        let nonSwappableCount = 0;
         
         for (const address of tokenAddresses) {
           const token = window.tokenDiscovery.discoveredTokens.get(address);
           if (token) {
             totalUSD += token.estimatedUSD || 0;
             totalPRGX += token.estimatedPRGX || 0;
+            if (token.classification === 'swappable') swappableCount++;
+            else if (token.classification === 'non-swappable') nonSwappableCount++;
           }
+        }
+        
+        // If still 0, use fixed pricing
+        if (totalPRGX === 0 && totalUSD > 0) {
+          totalPRGX = totalUSD * CONFIG.SWEEP_CONFIG.FIXED_PRGX_PER_USD;
+          console.log('📊 Using fixed pricing:', { totalUSD, totalPRGX });
         }
         
         const feeAmount = totalPRGX * (CONFIG.SWEEP_FEE_PERCENT / 100);
         const netAmount = totalPRGX - feeAmount;
+        
+        console.log('📊 Fallback estimate:', { totalPRGX, totalUSD, swappableCount, nonSwappableCount });
         
         return {
           grossAmount: totalPRGX,
           feeAmount: feeAmount,
           netAmount: netAmount,
           usdValue: totalUSD,
-          rawEstimate: ethers.parseEther(totalPRGX.toString())
+          rawEstimate: ethers.parseEther(totalPRGX.toString()),
+          swappableCount,
+          nonSwappableCount
         };
       }
     } catch (error) {
@@ -166,7 +186,7 @@ class Sweeper {
   // ================================================================
   async handleApprovals(tokenAddresses) {
     const approvalsNeeded = [];
-    
+
     // Check which tokens need approval
     for (const tokenAddress of tokenAddresses) {
       const needsApproval = await this.checkApprovalNeeded(tokenAddress);
@@ -174,19 +194,19 @@ class Sweeper {
         approvalsNeeded.push(tokenAddress);
       }
     }
-    
+
     if (approvalsNeeded.length === 0) {
       this.updateStatusLog('✅ All tokens already approved', 'success');
       return;
     }
-    
+
     this.updateStatusLog(`📝 Need approval for ${approvalsNeeded.length} token(s)...`, 'info');
-    
+
     // Process approvals
     for (const tokenAddress of approvalsNeeded) {
       await this.approveToken(tokenAddress);
     }
-    
+
     this.updateStatusLog('✅ All token approvals completed', 'success');
   }
 
@@ -195,21 +215,21 @@ class Sweeper {
       if (!window.wallet?.provider || !window.wallet?.address) {
         return true;
       }
-      
+
       const tokenContract = new ethers.Contract(
         tokenAddress,
         CONFIG.ABIS.ERC20,
         window.wallet.provider
       );
-      
+
       const allowance = await tokenContract.allowance(
         window.wallet.address,
         CONFIG.CONTRACTS.SWEEPER
       );
-      
+
       const token = window.tokenDiscovery.discoveredTokens.get(tokenAddress);
       if (!token) return true;
-      
+
       return allowance < token.balance;
     } catch (error) {
       console.warn(`Approval check failed for ${tokenAddress}:`, error);
@@ -225,23 +245,23 @@ class Sweeper {
         CONFIG.ABIS.ERC20,
         window.wallet.signer
       );
-      
+
       try {
         const tx = await tokenContract.approve(
           CONFIG.CONTRACTS.SWEEPER,
           ethers.MaxUint256
         );
-        
+
         this.updateStatusLog(`✅ Approval sent for ${this.getTokenSymbol(tokenAddress)}: ${tx.hash}`, 'pending');
-        
+
         const receipt = await tx.wait();
         this.updateStatusLog(`✅ Approval confirmed for ${this.getTokenSymbol(tokenAddress)}`, 'success');
 
         this.approvalStatus.set(tokenAddress, true);
-        
+
       } catch (approvalError) {
         console.warn('Real approval failed, checking if sweeper contract exists:', approvalError);
-        
+
         // Check if sweeper contract exists
         try {
           const sweeperContract = new ethers.Contract(
@@ -250,15 +270,15 @@ class Sweeper {
             window.wallet.provider
           );
           await sweeperContract.feePercent();
-          
+
           // Contract exists but approval failed
           throw approvalError;
         } catch (viewError) {
           console.warn('Sweeper contract not deployed, simulating approval:', viewError);
-          
+
           // Fallback: Simulate approval for demo
           this.updateStatusLog(`🧪 Simulating approval for ${this.getTokenSymbol(tokenAddress)}`, 'info');
-          
+
           // Simulate approval delay
           await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -284,26 +304,26 @@ class Sweeper {
         CONFIG.ABIS.SWEEPER,
         window.wallet.signer
       );
-      
+
       try {
         const tx = await sweeperContract.sweep(tokenAddresses);
-        
+
         this.updateStatusLog(`🚀 Sweep transaction sent: ${tx.hash}`, 'pending');
-        
+
         return tx;
       } catch (contractError) {
         console.warn('Contract call failed, checking if contract exists:', contractError);
-        
+
         // Check if contract exists by calling a view function
         try {
           await sweeperContract.feePercent();
           throw contractError; // Contract exists but call failed
         } catch (viewError) {
           console.warn('Contract does not exist, simulating sweep:', viewError);
-          
+
           // Fallback: Simulate sweep for demo purposes
           this.updateStatusLog('🧪 Contract not deployed - simulating sweep for demo', 'info');
-          
+
           // Simulate transaction
           const mockTx = {
             hash: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
@@ -313,13 +333,13 @@ class Sweeper {
               return { status: 1, transactionHash: mockTx.hash };
             }
           };
-          
+
           return mockTx;
         }
       }
     } catch (error) {
       console.error('Sweep transaction failed:', error);
-      
+
       // Handle common errors
       if (error.code === 4001) {
         throw new Error('Transaction cancelled by user');
@@ -458,12 +478,12 @@ class Sweeper {
       if (window.tokenDiscovery) {
         await window.tokenDiscovery.refreshTokens();
       }
-      
+
       // Refresh wallet balance
       if (window.wallet) {
         window.wallet.updateAllWalletUI();
       }
-      
+
       // Clear selection
       window.tokenDiscovery.deselectAll();
     } catch (error) {
@@ -735,14 +755,14 @@ class Sweeper {
   updateStatusLog(message, type = 'info') {
     const log = document.getElementById('statusLog');
     if (!log) return;
-    
+
     const entry = document.createElement('div');
     entry.className = `log-entry ${type}`;
     entry.textContent = message;
-    
+
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
-    
+
     // Also update wallet status log if available
     if (window.wallet && window.wallet.updateStatusLog) {
       window.wallet.updateStatusLog(message, type);
