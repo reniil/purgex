@@ -69,17 +69,20 @@ CONFIG.ABIS = {
 
   STAKING: [
     'function stake(uint256 amount) external',
-    'function unstake(uint256 amount) external',
-    'function claimRewards() external',
+    'function stakeAll() external',
+    'function withdraw(uint256 amount) external',
+    'function withdrawAll() external',
+    'function exit() external',
+    'function claimReward() external',
     'function pendingRewards(address user) view returns (uint256)',
-    'function stakedBalance(address user) view returns (uint256)',
-    'function balanceOf(address user) view returns (uint256)',
-    'function userStakedBalance(address user) view returns (uint256)',
+    'function pendingRewardsOf(address user) view returns (uint256)',
+    'function userStaked(address user) view returns (uint256)',
+    'function getStakedBalance(address user) view returns (uint256)',
     'function totalStaked() view returns (uint256)',
     'function rewardRate() view returns (uint256)',
     'event Staked(address indexed user, uint256 amount)',
-    'event Unstaked(address indexed user, uint256 amount)',
-    'event RewardsClaimed(address indexed user, uint256 amount)',
+    'event Withdrawn(address indexed user, uint256 amount)',
+    'event RewardPaid(address indexed user, address indexed token, uint256 amount)',
   ],
 
   PAIR: [

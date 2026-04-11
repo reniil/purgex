@@ -44,28 +44,10 @@ class StakingManager {
       );
       
       // Fetch all data in parallel with error handling
-      // Try multiple function names for staked balance
-      let stakedBalanceResult;
-      try {
-        stakedBalanceResult = await stakingContract.stakedBalance(userAddress);
-      } catch (e) {
-        console.log('⚠️ [STAKING] stakedBalance() failed, trying balanceOf()');
-        try {
-          stakedBalanceResult = await stakingContract.balanceOf(userAddress);
-        } catch (e2) {
-          console.log('⚠️ [STAKING] balanceOf() failed, trying userStakedBalance()');
-          try {
-            stakedBalanceResult = await stakingContract.userStakedBalance(userAddress);
-          } catch (e3) {
-            console.log('⚠️ [STAKING] userStakedBalance() failed, using 0');
-            stakedBalanceResult = 0n;
-          }
-        }
-      }
-      
+      // PRGXStaking.sol exposes user stake as getStakedBalance(address) (and userStaked mapping)
       const results = await Promise.allSettled([
-        Promise.resolve(stakedBalanceResult),
-        stakingContract.pendingRewards(userAddress),
+        stakingContract.getStakedBalance(userAddress),
+        stakingContract.pendingRewardsOf(userAddress),
         stakingContract.totalStaked(),
         stakingContract.rewardRate(),
         prgxContract.balanceOf(userAddress),
@@ -335,7 +317,7 @@ class StakingManager {
       );
       
       const amountWei = ethers.parseEther(amountPRGX);
-      const tx = await stakingContract.unstake(amountWei);
+      const tx = await stakingContract.withdraw(amountWei);
       
       this.updateStatusLog(`⏳ Unstake TX: ${tx.hash}`, 'pending');
       
@@ -384,34 +366,18 @@ class StakingManager {
         window.wallet.signer
       );
       
-      const tx = await stakingContract.claimRewards();
+      const tx = await stakingContract.claimReward();
       
       this.updateStatusLog(`⏳ Claim TX: ${tx.hash}`, 'pending');
       
       const receipt = await tx.wait();
       
-      // Extract claimed amount from event
-      const claimedEvent = receipt.logs?.find(log => {
-        try {
-          const parsed = stakingContract.interface.parseLog(log);
-          return parsed.name === 'RewardsClaimed';
-        } catch {
-          return false;
-        }
-      });
-      
-      let claimedAmount = 0;
-      if (claimedEvent) {
-        const parsed = stakingContract.interface.parseLog(claimedEvent);
-        claimedAmount = Number(ethers.formatEther(parsed.args.amount));
-      }
-      
-      this.updateStatusLog(`✅ Claimed ${claimedAmount.toFixed(4)} PRGX!`, 'success');
+      this.updateStatusLog('✅ Rewards claimed!', 'success');
       
       // Reload dashboard
       await this.loadDashboard();
       
-      window.wallet.showToast(`Successfully claimed ${claimedAmount.toFixed(4)} PRGX`, 'success');
+      window.wallet.showToast('Successfully claimed rewards', 'success');
       
     } catch (error) {
       console.error('Claim failed:', error);
