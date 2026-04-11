@@ -348,6 +348,23 @@ class Router {
   isCurrentPage(path) {
     return this.currentPath === path;
   }
+
+  // ================================================================
+  // QUERY STRING PARSER
+  // ================================================================
+  parseQueryString(queryString) {
+    const params = {};
+    if (!queryString) return params;
+
+    const pairs = queryString.split('&');
+    for (const pair of pairs) {
+      const [key, value] = pair.split('=');
+      if (key) {
+        params[decodeURIComponent(key)] = value ? decodeURIComponent(value) : '';
+      }
+    }
+    return params;
+  }
 }
 
 // ================================================================
