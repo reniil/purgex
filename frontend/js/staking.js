@@ -11,6 +11,7 @@ class StakingManager {
     this.lastUnstakeTime = null;
     this.cooldownData = null;
     this.cooldownInterval = null;
+    this.COOLDOWN_PERIOD = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
   }
 
   // ================================================================
@@ -107,10 +108,15 @@ class StakingManager {
         this.dashboardData.walletBalance = userResults[2].status === 'fulfilled' ?
           Number(ethers.formatEther(userResults[2].value)) : 0;
 
-        // Store cooldown data
+        // Store cooldown data (frontend-only implementation)
+        const lastUnstake = this.getLastUnstakeTime();
+        const now = Date.now();
+        const elapsed = now - lastUnstake;
+        const remaining = Math.max(0, this.COOLDOWN_PERIOD - elapsed);
+
         this.cooldownData = {
-          remaining: userResults[3].status === 'fulfilled' ? Number(userResults[3].value) : 0,
-          canUnstake: userResults[4].status === 'fulfilled' ? userResults[4].value : true
+          remaining: remaining,
+          canUnstake: elapsed >= this.COOLDOWN_PERIOD || lastUnstake === 0
         };
 
         // Update UI for connected user
@@ -211,6 +217,22 @@ class StakingManager {
       clearInterval(this.rewardCounterInterval);
       this.rewardCounterInterval = null;
     }
+  }
+
+  // ================================================================
+  // COOLDOWN STORAGE (Frontend-only)
+  // ================================================================
+  getLastUnstakeTime() {
+    const stored = localStorage.getItem('purgeX_lastUnstake');
+    return stored ? parseInt(stored) : 0;
+  }
+
+  setLastUnstakeTime(timestamp) {
+    localStorage.setItem('purgeX_lastUnstake', timestamp.toString());
+  }
+
+  clearCooldown() {
+    localStorage.removeItem('purgeX_lastUnstake');
   }
 
   // ================================================================
@@ -336,18 +358,17 @@ class StakingManager {
     if (!window.wallet?.isConnected) {
       throw new Error('Wallet not connected');
     }
-    
-    // Check 24-hour cooldown
-    if (this.lastUnstakeTime) {
-      const cooldownPeriod = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-      const timeSinceLastUnstake = Date.now() - this.lastUnstakeTime;
-      
-      if (timeSinceLastUnstake < cooldownPeriod) {
-        const hoursRemaining = Math.ceil((cooldownPeriod - timeSinceLastUnstake) / (60 * 60 * 1000));
-        throw new Error(`Unstake cooldown active. Please wait ${hoursRemaining} hours before unstaking again.`);
-      }
+
+    // Check frontend cooldown
+    const lastUnstake = this.getLastUnstakeTime();
+    const now = Date.now();
+    const elapsed = now - lastUnstake;
+
+    if (lastUnstake > 0 && elapsed < this.COOLDOWN_PERIOD) {
+      const hoursRemaining = Math.ceil((this.COOLDOWN_PERIOD - elapsed) / (60 * 60 * 1000));
+      throw new Error(`Unstake cooldown active. Please wait ${hoursRemaining} hours before unstaking again.`);
     }
-    
+
     // Get amount from input if not provided
     if (!amountPRGX) {
       const input = document.getElementById('unstakeAmount');
@@ -388,11 +409,16 @@ class StakingManager {
       this.updateStatusLog(`⏳ Unstake TX: ${tx.hash}`, 'pending');
       
       const receipt = await tx.wait();
-      
+
       this.updateStatusLog('✅ Unstake successful!', 'success');
-      
-      // Record last unstake time for cooldown
-      this.lastUnstakeTime = Date.now();
+
+      // Record last unstake time for frontend cooldown
+      this.setLastUnstakeTime(Date.now());
+      this.cooldownData = {
+        remaining: this.COOLDOWN_PERIOD,
+        canUnstake: false
+      };
+      this.startCooldownCounter();
       
       // Reload dashboard
       await this.loadDashboard();
@@ -407,6 +433,63 @@ class StakingManager {
         throw new Error('Transaction cancelled');
       } else {
         throw new Error(`Unstake failed: ${error.message}`);
+      }
+    }
+  }
+
+  async unstakeAll() {
+    if (!window.wallet?.isConnected) {
+      throw new Error('Wallet not connected');
+    }
+
+    // Check frontend cooldown
+    const lastUnstake = this.getLastUnstakeTime();
+    const now = Date.now();
+    const elapsed = now - lastUnstake;
+
+    if (lastUnstake > 0 && elapsed < this.COOLDOWN_PERIOD) {
+      const hoursRemaining = Math.ceil((this.COOLDOWN_PERIOD - elapsed) / (60 * 60 * 1000));
+      throw new Error(`Unstake cooldown active. Please wait ${hoursRemaining} hours before unstaking again.`);
+    }
+
+    try {
+      this.updateStatusLog('🚀 Executing unstake all transaction...', 'pending');
+
+      const stakingContract = new ethers.Contract(
+        CONFIG.CONTRACTS.STAKING,
+        CONFIG.ABIS.STAKING,
+        window.wallet.signer
+      );
+
+      const tx = await stakingContract.withdrawAll();
+
+      this.updateStatusLog(`⏳ Unstake All TX: ${tx.hash}`, 'pending');
+
+      const receipt = await tx.wait();
+
+      this.updateStatusLog('✅ Unstake all successful!', 'success');
+
+      // Record last unstake time for frontend cooldown
+      this.setLastUnstakeTime(Date.now());
+      this.cooldownData = {
+        remaining: this.COOLDOWN_PERIOD,
+        canUnstake: false
+      };
+      this.startCooldownCounter();
+
+      // Reload dashboard
+      await this.loadDashboard();
+
+      window.wallet.showToast('Successfully unstaked all PRGX', 'success');
+
+    } catch (error) {
+      console.error('Unstake all failed:', error);
+      this.updateStatusLog(`❌ Unstake all failed: ${error.message}`, 'error');
+
+      if (error.code === 4001) {
+        throw new Error('Transaction cancelled');
+      } else {
+        throw new Error(`Unstake all failed: ${error.message}`);
       }
     }
   }
@@ -578,18 +661,17 @@ class StakingManager {
     const cooldownEl = document.getElementById('unstakeCooldown');
     const unstakeBtn = document.getElementById('unstakeBtn');
     const unstakeAllBtn = document.getElementById('unstakeAllBtn');
-    const exitBtn = document.getElementById('exitBtn');
 
     if (cooldownEl) {
       if (this.cooldownData.remaining > 0) {
         const hours = Math.floor(this.cooldownData.remaining / 3600);
         const minutes = Math.floor((this.cooldownData.remaining % 3600) / 60);
-        const seconds = this.cooldownData.remaining % 60;
-        cooldownEl.textContent = `Cooldown: ${hours}h ${minutes}m ${seconds}s`;
+        const seconds = Math.floor(this.cooldownData.remaining % 60);
+        cooldownEl.textContent = `⏱️ Cooldown: ${hours}h ${minutes}m ${seconds}s`;
         cooldownEl.style.display = 'block';
         cooldownEl.style.color = 'var(--red)';
       } else {
-        cooldownEl.textContent = 'Ready to unstake';
+        cooldownEl.textContent = '✅ Ready to unstake';
         cooldownEl.style.color = 'var(--green)';
       }
     }
@@ -598,7 +680,6 @@ class StakingManager {
     const canUnstake = this.cooldownData.canUnstake;
     if (unstakeBtn) unstakeBtn.disabled = !canUnstake;
     if (unstakeAllBtn) unstakeAllBtn.disabled = !canUnstake;
-    if (exitBtn) exitBtn.disabled = !canUnstake;
   }
 
   showDisconnectedState() {
