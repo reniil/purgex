@@ -21,6 +21,12 @@ const KNOWN_TOKENS = [
   { symbol: "WETH",  addr: "0x02DcdD04e3F455D838cd1249292C58f3B79e3C3C" },
   { symbol: "eHEX",  addr: "0x57fde0a71132198BBeC939B98976993d8D89D225" },
   { symbol: "PRGC",  addr: "0x352b08bD0d62D49911F1Efb9CDE9184e332A07d0" }, // PRGX token
+  // Additional verified PulseChain tokens
+  { symbol: "HDRN",  addr: "0x3819f6E91F4e4c749cE37386CeCBf480C5f3a5f" }, // Hedron
+  { symbol: "MAXI",  addr: "0x0d86EB9f7c27d3DF9EebDA5E5a292a08C0f2E18E" },
+  { symbol: "TEAM",  addr: "0x6007e7e2cefcb4e98a95f17d8855d9e7f1e8e3c5" },
+  { symbol: "FENIX", addr: "0x6d79B6D40dE561bD6200C8d903D80D924b89e03a" },
+  { symbol: "TYRH",  addr: "0x6b0C28C1eF788c38E3FcC6370d0c4343b0920c70" },
 ];
 
 class FactoryPage {
@@ -45,51 +51,56 @@ class FactoryPage {
     await this.load();
     this.startLiveUpdates();
     
-    // Try to load additional tokens from PulseCoinList
-    await this.loadPulseCoinListTokens();
+    // Try to load additional tokens from DEXScreener
+    await this.loadAdditionalTokens();
   }
 
-  // Fetch tokens from PulseCoinList API
-  async loadPulseCoinListTokens() {
+  // Fetch additional tokens from external sources (DEXScreener trending)
+  async loadAdditionalTokens() {
     try {
-      console.log('🔍 Fetching tokens from PulseCoinList...');
+      console.log('🔍 Fetching additional tokens from DEXScreener...');
       
-      // PulseCoinList API endpoint (if available)
-      const response = await fetch(`${PULSECOINLIST_API}/tokens?limit=100`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
+      // DEXScreener trending/boosted tokens on PulseChain
+      const response = await fetch('https://api.dexscreener.com/token-boosts/top/v1');
       
       if (!response.ok) {
-        console.log('PulseCoinList API not available, using fallback...');
+        console.log('DEXScreener boosts API not available');
         return;
       }
       
       const data = await response.json();
       
-      if (data && Array.isArray(data.tokens)) {
+      if (data && Array.isArray(data)) {
+        // Filter for PulseChain tokens only (chainId: 369)
+        const pulseChainTokens = data.filter(t => t.chainId === 'pulsechain' || t.chainId === '369');
+        
+        console.log(`✅ Found ${pulseChainTokens.length} trending tokens on PulseChain`);
+        
         // Merge with existing tokens, avoiding duplicates
         const existingAddrs = new Set(KNOWN_TOKENS.map(t => t.addr.toLowerCase()));
+        let added = 0;
         
-        for (const token of data.tokens) {
-          if (token.address && !existingAddrs.has(token.address.toLowerCase())) {
+        for (const token of pulseChainTokens) {
+          if (token.tokenAddress && !existingAddrs.has(token.tokenAddress.toLowerCase())) {
             KNOWN_TOKENS.push({
-              symbol: token.symbol || 'UNKNOWN',
-              addr: token.address,
-              name: token.name,
-              source: 'pulsecoinlist'
+              symbol: token.tokenSymbol || 'UNKNOWN',
+              addr: token.tokenAddress,
+              name: token.tokenName || token.tokenSymbol,
+              source: 'dexscreener-trending'
             });
-            existingAddrs.add(token.address.toLowerCase());
+            existingAddrs.add(token.tokenAddress.toLowerCase());
+            added++;
           }
         }
         
-        console.log(`✅ Added ${data.tokens.length} tokens from PulseCoinList`);
-        
-        // Reload with new tokens
-        await this.load();
+        if (added > 0) {
+          console.log(`✅ Added ${added} trending tokens from DEXScreener`);
+          // Reload with new tokens
+          await this.load();
+        }
       }
     } catch (err) {
-      console.log('PulseCoinList API error (expected if no API):', err.message);
+      console.log('DEXScreener trending API error:', err.message);
     }
   }
 
@@ -315,32 +326,61 @@ class FactoryPage {
     } catch { return 0; }
   }
 
-  // Discover all tokens from BlockScout (get top tokens by market cap or volume)
+  // Discover tokens from DEXScreener (gets top pairs with activity)
   async discoverTokens() {
     try {
-      console.log('🔍 Discovering tokens from BlockScout...');
+      console.log('🔍 Discovering tokens from DEXScreener...');
       
-      // Try to get tokens from BlockScout token list
-      const res = await this.callAPI({ 
-        module: "token", 
-        action: "getTokenList",
-        page: 1,
-        offset: 100
-      });
+      // Fetch top pairs from PulseChain on DEXScreener
+      const res = await fetch('https://api.dexscreener.com/latest/dex/pulsechain');
       
-      if (res.result && Array.isArray(res.result)) {
-        console.log(`✅ Found ${res.result.length} tokens from BlockScout`);
+      if (!res.ok) {
+        console.log('DEXScreener API not available, using known tokens');
+        return KNOWN_TOKENS;
+      }
+      
+      const data = await res.json();
+      
+      if (data && data.pairs && Array.isArray(data.pairs)) {
+        console.log(`✅ Found ${data.pairs.length} pairs from DEXScreener`);
         
-        return res.result.map(t => ({
-          symbol: t.symbol || 'UNKNOWN',
-          addr: t.contractAddress || t.address,
-          name: t.name,
-          decimals: t.decimals || '18',
-          source: 'blockscout'
-        })).filter(t => t.addr && t.addr.startsWith('0x'));
+        // Extract unique tokens from pairs
+        const tokens = new Map();
+        
+        for (const pair of data.pairs) {
+          // Add base token
+          if (pair.baseToken && pair.baseToken.address) {
+            tokens.set(pair.baseToken.address.toLowerCase(), {
+              symbol: pair.baseToken.symbol || 'UNKNOWN',
+              addr: pair.baseToken.address,
+              name: pair.baseToken.name,
+              decimals: '18',
+              source: 'dexscreener'
+            });
+          }
+          
+          // Add quote token (usually WPLS)
+          if (pair.quoteToken && pair.quoteToken.address) {
+            tokens.set(pair.quoteToken.address.toLowerCase(), {
+              symbol: pair.quoteToken.symbol || 'UNKNOWN',
+              addr: pair.quoteToken.address,
+              name: pair.quoteToken.name,
+              decimals: '18',
+              source: 'dexscreener'
+            });
+          }
+        }
+        
+        // Merge with known tokens, avoiding duplicates
+        const existingAddrs = new Set(KNOWN_TOKENS.map(t => t.addr.toLowerCase()));
+        const discoveredTokens = Array.from(tokens.values()).filter(t => !existingAddrs.has(t.addr.toLowerCase()));
+        
+        console.log(`✅ Discovered ${discoveredTokens.length} new tokens`);
+        
+        return [...KNOWN_TOKENS, ...discoveredTokens];
       }
     } catch (err) {
-      console.log('BlockScout token discovery failed:', err.message);
+      console.log('DEXScreener token discovery failed:', err.message);
     }
     
     // Fallback: return known tokens
