@@ -8,6 +8,7 @@ class StakingManager {
     this.rewardCounterInterval = null;
     this.pendingRewardsStart = 0;
     this.userStakeFraction = 0;
+    this.lastUnstakeTime = null;
   }
 
   // ================================================================
@@ -244,20 +245,46 @@ class StakingManager {
   // UNSTAKE PRGX
   // ================================================================
   async unstake(amountPRGX) {
+    console.log('🔍 [UNSTAKE] Unstake called with amount:', amountPRGX);
+    
     if (!window.wallet?.isConnected) {
       throw new Error('Wallet not connected');
     }
     
-    if (!amountPRGX || parseFloat(amountPRGX) <= 0) {
-      throw new Error('Invalid unstake amount');
+    // Check 24-hour cooldown
+    if (this.lastUnstakeTime) {
+      const cooldownPeriod = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+      const timeSinceLastUnstake = Date.now() - this.lastUnstakeTime;
+      
+      if (timeSinceLastUnstake < cooldownPeriod) {
+        const hoursRemaining = Math.ceil((cooldownPeriod - timeSinceLastUnstake) / (60 * 60 * 1000));
+        throw new Error(`Unstake cooldown active. Please wait ${hoursRemaining} hours before unstaking again.`);
+      }
     }
+    
+    // Get amount from input if not provided
+    if (!amountPRGX) {
+      const input = document.getElementById('unstakeAmount');
+      if (input) {
+        amountPRGX = input.value;
+      }
+    }
+    
+    console.log('🔍 [UNSTAKE] Amount after input check:', amountPRGX);
+    
+    if (!amountPRGX || amountPRGX === '' || isNaN(parseFloat(amountPRGX)) || parseFloat(amountPRGX) <= 0) {
+      throw new Error('Invalid unstake amount. Please enter a valid number.');
+    }
+    
+    const amount = parseFloat(amountPRGX);
+    console.log('🔍 [UNSTAKE] Parsed amount:', amount);
     
     if (!this.dashboardData) {
-      throw new Error('Dashboard data not loaded');
+      throw new Error('Dashboard data not loaded. Please wait for data to load.');
     }
     
-    if (parseFloat(amountPRGX) > this.dashboardData.stakedBalance) {
-      throw new Error('Insufficient staked balance');
+    if (amount > this.dashboardData.stakedBalance) {
+      throw new Error(`Insufficient staked balance. You have ${this.dashboardData.stakedBalance.toFixed(4)} PRGX staked.`);
     }
     
     try {
@@ -277,6 +304,9 @@ class StakingManager {
       const receipt = await tx.wait();
       
       this.updateStatusLog('✅ Unstake successful!', 'success');
+      
+      // Record last unstake time for cooldown
+      this.lastUnstakeTime = Date.now();
       
       // Reload dashboard
       await this.loadDashboard();
