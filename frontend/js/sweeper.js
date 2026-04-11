@@ -84,7 +84,8 @@ class Sweeper {
 
     // Check if we have token data
     for (const address of tokenAddresses) {
-      const token = window.tokenDiscovery.discoveredTokens.get(address);
+      const lookupAddr = address.toLowerCase();
+      const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
       if (!token) {
         throw new Error(`Token data not found for ${address}`);
       }
@@ -246,7 +247,8 @@ class Sweeper {
         CONFIG.CONTRACTS.SWEEPER
       );
 
-      const token = window.tokenDiscovery.discoveredTokens.get(tokenAddress);
+      const lookupAddr = tokenAddress.toLowerCase();
+      const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
       if (!token) return true;
 
       return allowance < token.balance;
@@ -385,7 +387,12 @@ class Sweeper {
 
       // Build token list with classification (sanitized)
       const tokenList = selectedTokens.map(address => {
-        const token = window.tokenDiscovery.discoveredTokens.get(address);
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
+        if (!token) {
+          console.warn(`Token not found for address: ${address}`);
+          return '';
+        }
         const safeSymbol = token.symbol ? Utils.sanitize(token.symbol) : '???';
         const classificationBadge = token.classification === 'swappable' ? '🟢' :
                                    token.classification === 'non-swappable' ? '🔴' : '⚪';
@@ -527,7 +534,8 @@ class Sweeper {
       let hasSwappable = false;
 
       for (const address of selectedTokens) {
-        const token = window.tokenDiscovery.discoveredTokens.get(address);
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
           if (token.classification === 'non-swappable' || token.classification === 'unknown') {
             hasNonSwappable = true;
@@ -684,7 +692,8 @@ class Sweeper {
       const nonSwappableTokens = [];
 
       for (const address of selectedTokenAddresses) {
-        const token = window.tokenDiscovery.discoveredTokens.get(address);
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
           if (token.classification === 'swappable') {
             swappableTokens.push(address);
@@ -701,7 +710,8 @@ class Sweeper {
       if (swappableTokens.length > 0) {
         this.updateStatusLog('📊 Calculating estimated output...', 'info');
         for (const address of swappableTokens) {
-          const token = window.tokenDiscovery.discoveredTokens.get(address);
+          const lookupAddr = address.toLowerCase();
+          const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
           if (token) {
             totalPRGX += token.estimatedPRGX || 0;
           }
@@ -729,7 +739,8 @@ class Sweeper {
 
       // Step 6: Process swappable tokens
       for (const address of swappableTokens) {
-        const token = window.tokenDiscovery.discoveredTokens.get(address);
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
           const swapResult = await this.swapOnPulseX(address, token.balance);
           if (!swapResult.success) {
@@ -742,7 +753,8 @@ class Sweeper {
 
       // Step 7: Process non-swappable tokens
       for (const address of nonSwappableTokens) {
-        const token = window.tokenDiscovery.discoveredTokens.get(address);
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
           await this.transferToFallback(address, token.balance);
         }
