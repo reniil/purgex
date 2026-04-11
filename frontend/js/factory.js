@@ -4,6 +4,7 @@
 // ================================================================
 
 const API_BASE = "https://api.scan.pulsechain.com/api";
+const PULSECOINLIST_API = "https://pulsecoinlist.com/api";
 const PAGE_SIZE = 10;
 const PULSEX_FACTORY = "0x1715a3E4a142d8b698131108995174F37aEBA10D";
 
@@ -43,16 +44,141 @@ class FactoryPage {
     this.setupEventListeners();
     await this.load();
     this.startLiveUpdates();
+    
+    // Try to load additional tokens from PulseCoinList
+    await this.loadPulseCoinListTokens();
+  }
+
+  // Fetch tokens from PulseCoinList API
+  async loadPulseCoinListTokens() {
+    try {
+      console.log('🔍 Fetching tokens from PulseCoinList...');
+      
+      // PulseCoinList API endpoint (if available)
+      const response = await fetch(`${PULSECOINLIST_API}/tokens?limit=100`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        console.log('PulseCoinList API not available, using fallback...');
+        return;
+      }
+      
+      const data = await response.json();
+      
+      if (data && Array.isArray(data.tokens)) {
+        // Merge with existing tokens, avoiding duplicates
+        const existingAddrs = new Set(KNOWN_TOKENS.map(t => t.addr.toLowerCase()));
+        
+        for (const token of data.tokens) {
+          if (token.address && !existingAddrs.has(token.address.toLowerCase())) {
+            KNOWN_TOKENS.push({
+              symbol: token.symbol || 'UNKNOWN',
+              addr: token.address,
+              name: token.name,
+              source: 'pulsecoinlist'
+            });
+            existingAddrs.add(token.address.toLowerCase());
+          }
+        }
+        
+        console.log(`✅ Added ${data.tokens.length} tokens from PulseCoinList`);
+        
+        // Reload with new tokens
+        await this.load();
+      }
+    } catch (err) {
+      console.log('PulseCoinList API error (expected if no API):', err.message);
+    }
+  }
+
+  // Search for token on external sites
+  async searchExternal(query) {
+    if (!query || query.length < 3) return;
+    
+    const results = [];
+    
+    // Search on PulseCoinList
+    try {
+      const pclUrl = `https://pulsecoinlist.com/?search=${encodeURIComponent(query)}`;
+      results.push({
+        name: 'PulseCoinList',
+        url: pclUrl,
+        icon: '🔍'
+      });
+    } catch (e) {}
+    
+    // Search on PulseScan
+    if (query.startsWith('0x') && query.length === 42) {
+      results.push({
+        name: 'PulseScan',
+        url: `https://scan.pulsechain.com/address/${query}`,
+        icon: '🔎'
+      });
+      
+      // DEXScreener
+      results.push({
+        name: 'DEXScreener',
+        url: `https://dexscreener.com/pulsechain/${query}`,
+        icon: '📊'
+      });
+      
+      // PulseX Info
+      results.push({
+        name: 'PulseX Info',
+        url: `https://pulsex.mypinata.cloud/#/tokens/${query}`,
+        icon: '💱'
+      });
+    }
+    
+    // Render external search results
+    this.renderExternalResults(results, query);
+  }
+
+  renderExternalResults(results, query) {
+    const tbody = document.getElementById('factoryTableBody');
+    if (!tbody || results.length === 0) return;
+    
+    const html = `
+      <div style="padding: 20px; border-bottom: 1px solid var(--border-1); background: rgba(124, 58, 237, 0.05);">
+        <div style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); margin-bottom: 12px;">
+          🔎 External search results for "${query}":
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          ${results.map(r => `
+            <a href="${r.url}" target="_blank" rel="noopener" 
+               style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.75rem; color: var(--primary-light); text-decoration: none; transition: all 0.2s;"
+               onmouseover="this.style.background='rgba(124, 58, 237, 0.1)'" 
+               onmouseout="this.style.background='var(--bg-card)'">
+              ${r.icon} ${r.name}
+            </a>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    
+    // Prepend to table
+    tbody.insertAdjacentHTML('afterbegin', html);
   }
 
   setupEventListeners() {
     // Search
     const searchInput = document.getElementById('factorySearch');
     if (searchInput) {
+      let debounceTimer;
       searchInput.addEventListener('input', (e) => {
         this.search = e.target.value;
         this.page = 1;
         this.applyFilters();
+        
+        // Debounced external search
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          if (this.search.length >= 3) {
+            this.searchExternal(this.search);
+          }
+        }, 500);
       });
     }
 
