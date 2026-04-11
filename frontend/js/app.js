@@ -341,7 +341,98 @@ window.homePage = {
       window.wallet.updateAllWalletUI();
     }
     
+    // Load recent activity
+    this.loadRecentActivity();
+    
     // Load live stats, setup animations, etc.
+  },
+  
+  async loadRecentActivity() {
+    const activityFeed = document.getElementById('activityFeed');
+    if (!activityFeed) return;
+    
+    try {
+      // Fetch recent transactions from PulseScan API
+      const prgxToken = CONFIG.CONTRACTS.PRGX_TOKEN;
+      const apiUrl = `${CONFIG.APIS.PULSESCAN_BASE}/api?module=account&action=tokentx&contractaddress=${prgxToken}&page=1&offset=10&sort=desc`;
+      
+      const response = await fetch(apiUrl);
+      const data = await response.json();
+      
+      if (data.status === '1' && data.result && data.result.length > 0) {
+        this.renderActivityFeed(data.result);
+      } else {
+        activityFeed.innerHTML = `
+          <div style="text-align: center; padding: 2rem; color: var(--text-3);">
+            <p>No recent activity found</p>
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error('Failed to load recent activity:', error);
+      activityFeed.innerHTML = `
+        <div style="text-align: center; padding: 2rem; color: var(--text-3);">
+          <p>Failed to load activity</p>
+        </div>
+      `;
+    }
+  },
+  
+  renderActivityFeed(transactions) {
+    const activityFeed = document.getElementById('activityFeed');
+    if (!activityFeed) return;
+    
+    activityFeed.innerHTML = '';
+    
+    transactions.forEach(tx => {
+      const item = document.createElement('div');
+      item.style.cssText = 'padding: 1rem; border-bottom: 1px solid var(--border-1); display: flex; align-items: center; gap: 1rem; transition: background 0.2s;';
+      item.onmouseover = () => item.style.background = 'var(--bg-card)';
+      item.onmouseout = () => item.style.background = 'transparent';
+      
+      const type = tx.to.toLowerCase() === CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase() ? 'Buy' : 'Sell';
+      const typeColor = type === 'Buy' ? 'var(--green)' : 'var(--red)';
+      const value = (parseFloat(tx.value) / Math.pow(10, parseInt(tx.tokenDecimal))).toFixed(2);
+      const timeAgo = this.getTimeAgo(parseInt(tx.timeStamp) * 1000);
+      
+      item.innerHTML = `
+        <div style="font-size: 1.5rem;">${type === 'Buy' ? '📈' : '📉'}</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: var(--text-1); margin-bottom: 0.25rem;">
+            ${type} ${value} PRGX
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-3);">
+            ${this.shortenAddress(tx.from)} → ${this.shortenAddress(tx.to)}
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-weight: 600; color: ${typeColor};">${type}</div>
+          <div style="font-size: 0.8rem; color: var(--text-3);">${timeAgo}</div>
+        </div>
+      `;
+      
+      item.addEventListener('click', () => {
+        window.open(`${CONFIG.NETWORK.explorer}/tx/${tx.hash}`, '_blank');
+      });
+      item.style.cursor = 'pointer';
+      
+      activityFeed.appendChild(item);
+    });
+  },
+  
+  shortenAddress(address) {
+    if (!address) return 'N/A';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  },
+  
+  getTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return `${Math.floor(seconds / 604800)}w ago`;
   }
 };
 
