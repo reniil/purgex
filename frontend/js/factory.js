@@ -403,11 +403,13 @@ class FactoryPage {
     try {
       console.log('🔍 Discovering tokens from multiple sources...');
 
-      // Check cache first
+      // Check cache first (only use if we have a lot of tokens)
       const cachedTokens = this.loadFromCache();
-      if (cachedTokens && cachedTokens.length > 50) {
-        console.log('✅ Using cached tokens');
+      if (cachedTokens && cachedTokens.length > 500) {
+        console.log(`✅ Using cached tokens (${cachedTokens.length})`);
         return cachedTokens;
+      } else if (cachedTokens) {
+        console.log(`⚠️ Cache has only ${cachedTokens.length} tokens, fetching fresh...`);
       }
 
       // Fetch from multiple sources in parallel
@@ -418,11 +420,19 @@ class FactoryPage {
         this.fetchFromPulseCoinList()
       ]);
 
+      // Log results from each source
+      console.log('📊 Discovery results:');
+      console.log(`  - DEXScreener: ${dexScreenerTokens.status === 'fulfilled' ? dexScreenerTokens.value.length : 'failed'}`);
+      console.log(`  - PulseX Factory: ${pulseXTokens.status === 'fulfilled' ? pulseXTokens.value.length : 'failed'}`);
+      console.log(`  - NineSwap: ${nineSwapTokens.status === 'fulfilled' ? nineSwapTokens.value.length : 'failed'}`);
+      console.log(`  - PulseCoinList: ${pulseCoinListTokens.status === 'fulfilled' ? pulseCoinListTokens.value.length : 'failed'}`);
+
       // Combine all discovered tokens
       const allTokens = new Map();
 
       // Add known tokens first
       KNOWN_TOKENS.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
+      console.log(`  - Known tokens: ${KNOWN_TOKENS.length}`);
 
       // Add DEXScreener tokens
       if (dexScreenerTokens.status === 'fulfilled') {
@@ -445,7 +455,7 @@ class FactoryPage {
       }
 
       const finalTokens = Array.from(allTokens.values());
-      console.log(`✅ Discovered ${finalTokens.length} total tokens from all sources`);
+      console.log(`✅ Discovered ${finalTokens.length} total tokens from all sources (after deduplication)`);
 
       // Save to cache
       this.saveToCache(finalTokens);
@@ -460,11 +470,20 @@ class FactoryPage {
   // Fetch from DEXScreener
   async fetchFromDexScreener() {
     try {
+      console.log('🔍 Fetching from DEXScreener...');
       const res = await fetch('https://api.dexscreener.com/latest/dex/pulsechain');
-      if (!res.ok) return [];
+      if (!res.ok) {
+        console.log('DEXScreener API not available');
+        return [];
+      }
 
       const data = await res.json();
-      if (!data?.pairs) return [];
+      if (!data?.pairs) {
+        console.log('DEXScreener returned no pairs');
+        return [];
+      }
+
+      console.log(`DEXScreener returned ${data.pairs.length} pairs`);
 
       const tokens = new Map();
       for (const pair of data.pairs) {
@@ -487,6 +506,7 @@ class FactoryPage {
           });
         }
       }
+      console.log(`✅ DEXScreener found ${tokens.size} unique tokens`);
       return Array.from(tokens.values());
     } catch (err) {
       console.warn('DEXScreener fetch failed:', err.message);
@@ -513,52 +533,68 @@ class FactoryPage {
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
 
-      console.log(`PulseX has ${count} pairs, fetching last 100...`);
+      console.log(`PulseX has ${count} total pairs, fetching all...`);
 
-      // Fetch last 100 pairs (most recent)
+      // Fetch ALL pairs (not just the last 100)
       const tokens = new Map();
-      const startIdx = Math.max(0, count - 100);
-
       const pairABI = [
         'function token0() view returns (address)',
         'function token1() view returns (address)'
       ];
 
-      for (let i = startIdx; i < count; i++) {
-        try {
-          const pairAddress = await factory.allPairs(i);
-          const pair = new ethers.Contract(pairAddress, pairABI, provider);
+      // Process in batches to avoid rate limiting
+      const batchSize = 50;
+      for (let i = 0; i < count; i += batchSize) {
+        const endIdx = Math.min(i + batchSize, count);
+        const batchPromises = [];
 
-          const [token0, token1] = await Promise.all([
-            pair.token0(),
-            pair.token1()
-          ]);
+        for (let j = i; j < endIdx; j++) {
+          batchPromises.push(
+            (async (idx) => {
+              try {
+                const pairAddress = await factory.allPairs(idx);
+                const pair = new ethers.Contract(pairAddress, pairABI, provider);
 
-          // Add both tokens (skip WPLS to avoid duplicates)
-          if (token0.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
-            tokens.set(token0.toLowerCase(), {
+                const [token0, token1] = await Promise.all([
+                  pair.token0(),
+                  pair.token1()
+                ]);
+
+                // Add both tokens (skip WPLS to avoid duplicates)
+                if (token0.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+                  return { address: token0, source: 'pulsex-factory' };
+                }
+                if (token1.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+                  return { address: token1, source: 'pulsex-factory' };
+                }
+              } catch (e) {
+                // Skip failed pair fetches
+              }
+              return null;
+            })(j)
+          );
+        }
+
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach(result => {
+          if (result) {
+            tokens.set(result.address.toLowerCase(), {
               symbol: 'UNKNOWN',
-              addr: token0,
+              addr: result.address,
               name: 'Token from PulseX',
               decimals: '18',
-              source: 'pulsex-factory'
+              source: result.source
             });
           }
-          if (token1.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
-            tokens.set(token1.toLowerCase(), {
-              symbol: 'UNKNOWN',
-              addr: token1,
-              name: 'Token from PulseX',
-              decimals: '18',
-              source: 'pulsex-factory'
-            });
-          }
-        } catch (e) {
-          // Skip failed pair fetches
+        });
+
+        // Log progress every 500 pairs
+        if (endIdx % 500 === 0) {
+          console.log(`Progress: ${endIdx}/${count} pairs processed, ${tokens.size} unique tokens found`);
         }
       }
 
-      console.log(`✅ Found ${tokens.size} tokens from PulseX Factory`);
+      console.log(`✅ Found ${tokens.size} tokens from PulseX Factory (out of ${count} pairs)`);
       return Array.from(tokens.values());
     } catch (err) {
       console.warn('PulseX Factory fetch failed:', err.message);
@@ -582,49 +618,65 @@ class FactoryPage {
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
 
-      console.log(`NineSwap has ${count} pairs, fetching last 50...`);
+      console.log(`NineSwap has ${count} total pairs, fetching all...`);
 
       const tokens = new Map();
-      const startIdx = Math.max(0, count - 50);
       const pairABI = [
         'function token0() view returns (address)',
         'function token1() view returns (address)'
       ];
 
-      for (let i = startIdx; i < count; i++) {
-        try {
-          const pairAddress = await factory.allPairs(i);
-          const pair = new ethers.Contract(pairAddress, pairABI, provider);
+      // Process in batches
+      const batchSize = 50;
+      for (let i = 0; i < count; i += batchSize) {
+        const endIdx = Math.min(i + batchSize, count);
+        const batchPromises = [];
 
-          const [token0, token1] = await Promise.all([
-            pair.token0(),
-            pair.token1()
-          ]);
+        for (let j = i; j < endIdx; j++) {
+          batchPromises.push(
+            (async (idx) => {
+              try {
+                const pairAddress = await factory.allPairs(idx);
+                const pair = new ethers.Contract(pairAddress, pairABI, provider);
 
-          if (token0.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
-            tokens.set(token0.toLowerCase(), {
+                const [token0, token1] = await Promise.all([
+                  pair.token0(),
+                  pair.token1()
+                ]);
+
+                if (token0.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+                  return { address: token0, source: 'nineswap' };
+                }
+                if (token1.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+                  return { address: token1, source: 'nineswap' };
+                }
+              } catch (e) {
+                // Skip failed pair fetches
+              }
+              return null;
+            })(j)
+          );
+        }
+
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach(result => {
+          if (result) {
+            tokens.set(result.address.toLowerCase(), {
               symbol: 'UNKNOWN',
-              addr: token0,
+              addr: result.address,
               name: 'Token from NineSwap',
               decimals: '18',
-              source: 'nineswap'
+              source: result.source
             });
           }
-          if (token1.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
-            tokens.set(token1.toLowerCase(), {
-              symbol: 'UNKNOWN',
-              addr: token1,
-              name: 'Token from NineSwap',
-              decimals: '18',
-              source: 'nineswap'
-            });
-          }
-        } catch (e) {
-          // Skip failed pair fetches
+        });
+
+        if (endIdx % 500 === 0) {
+          console.log(`Progress: ${endIdx}/${count} pairs processed, ${tokens.size} unique tokens found`);
         }
       }
 
-      console.log(`✅ Found ${tokens.size} tokens from NineSwap`);
+      console.log(`✅ Found ${tokens.size} tokens from NineSwap (out of ${count} pairs)`);
       return Array.from(tokens.values());
     } catch (err) {
       console.warn('NineSwap fetch failed:', err.message);
@@ -942,9 +994,11 @@ class FactoryPage {
         tokensToFetch = KNOWN_TOKENS;
       }
 
-      // Fetch all token data in parallel (batch in groups of 5 to avoid rate limits)
+      // Fetch all token data in parallel (batch in groups of 20 for faster processing)
       const tokenData = [];
-      const batchSize = 5;
+      const batchSize = 20;
+
+      console.log(`Fetching metadata for ${tokensToFetch.length} tokens in batches of ${batchSize}...`);
       
       for (let i = 0; i < tokensToFetch.length; i += batchSize) {
         const batch = tokensToFetch.slice(i, i + batchSize);
