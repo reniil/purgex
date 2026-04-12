@@ -7,6 +7,9 @@ const API_BASE = "https://api.scan.pulsechain.com/api";
 const PULSECOINLIST_API = "https://pulsecoinlist.com/api";
 const PAGE_SIZE = 10;
 const PULSEX_FACTORY = "0x1715a3E4a142d8b698131108995174F37aEBA10D";
+const NINESWAP_FACTORY = "0x6EcCab422D763aC9514C8AB95925C5A12D866874";
+const CACHE_KEY = 'purgeX_factory_tokens';
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
 // Known PulseChain tokens — real tokens with WPLS pairs on PulseX
 // Data fetched in real-time from BlockScout API
@@ -43,6 +46,46 @@ class FactoryPage {
     this.lastUpdated = null;
     this.refreshInterval = null;
     this.walletBalances = new Map(); // Store wallet token balances
+    this.discoveredTokens = new Map(); // Cache for discovered tokens
+    this.nftCollections = new Map(); // Cache for NFT collections
+  }
+
+  // ================================================================
+  // CACHING METHODS
+  // ================================================================
+  loadFromCache() {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        const now = Date.now();
+        if (now - data.timestamp < CACHE_DURATION) {
+          console.log('✅ Loaded tokens from cache');
+          return data.tokens;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load cache:', e);
+    }
+    return null;
+  }
+
+  saveToCache(tokens) {
+    try {
+      const data = {
+        tokens: tokens,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      console.log('✅ Saved tokens to cache');
+    } catch (e) {
+      console.warn('Failed to save cache:', e);
+    }
+  }
+
+  clearCache() {
+    localStorage.removeItem(CACHE_KEY);
+    console.log('🗑️ Cache cleared');
   }
 
   async init() {
@@ -57,8 +100,11 @@ class FactoryPage {
       await this.loadWalletBalances();
     }
 
-    // Try to load additional tokens from DEXScreener
-    await this.loadAdditionalTokens();
+    // Discover NFT collections
+    await this.discoverNFTCollections();
+
+    // Start background sync for continuous updates
+    this.startBackgroundSync();
   }
 
   // Load wallet balances for displayed tokens
@@ -106,55 +152,6 @@ class FactoryPage {
 
     } catch (error) {
       console.error('Failed to load wallet balances:', error);
-    }
-  }
-
-  // Fetch additional tokens from external sources (DEXScreener trending)
-  async loadAdditionalTokens() {
-    try {
-      console.log('🔍 Fetching additional tokens from DEXScreener...');
-      
-      // DEXScreener trending/boosted tokens on PulseChain
-      const response = await fetch('https://api.dexscreener.com/token-boosts/top/v1');
-      
-      if (!response.ok) {
-        console.log('DEXScreener boosts API not available');
-        return;
-      }
-      
-      const data = await response.json();
-      
-      if (data && Array.isArray(data)) {
-        // Filter for PulseChain tokens only (chainId: 369)
-        const pulseChainTokens = data.filter(t => t.chainId === 'pulsechain' || t.chainId === '369');
-        
-        console.log(`✅ Found ${pulseChainTokens.length} trending tokens on PulseChain`);
-        
-        // Merge with existing tokens, avoiding duplicates
-        const existingAddrs = new Set(KNOWN_TOKENS.map(t => t.addr.toLowerCase()));
-        let added = 0;
-        
-        for (const token of pulseChainTokens) {
-          if (token.tokenAddress && !existingAddrs.has(token.tokenAddress.toLowerCase())) {
-            KNOWN_TOKENS.push({
-              symbol: token.tokenSymbol || 'UNKNOWN',
-              addr: token.tokenAddress,
-              name: token.tokenName || token.tokenSymbol,
-              source: 'dexscreener-trending'
-            });
-            existingAddrs.add(token.tokenAddress.toLowerCase());
-            added++;
-          }
-        }
-        
-        if (added > 0) {
-          console.log(`✅ Added ${added} trending tokens from DEXScreener`);
-          // Reload with new tokens
-          await this.load();
-        }
-      }
-    } catch (err) {
-      console.log('DEXScreener trending API error:', err.message);
     }
   }
 
@@ -306,6 +303,18 @@ class FactoryPage {
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => this.load());
     }
+
+    // Clear Cache
+    const clearCacheBtn = document.getElementById('clearCache');
+    if (clearCacheBtn) {
+      clearCacheBtn.addEventListener('click', () => {
+        this.clearCache();
+        this.load();
+        if (window.wallet?.showToast) {
+          window.wallet.showToast('Cache cleared and tokens refreshed', 'success');
+        }
+      });
+    }
   }
 
   startLiveUpdates() {
@@ -317,6 +326,7 @@ class FactoryPage {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
     }
+    this.stopBackgroundSync();
   }
 
   // API helper
@@ -391,62 +401,329 @@ class FactoryPage {
   // Discover tokens from DEXScreener (gets top pairs with activity)
   async discoverTokens() {
     try {
-      console.log('🔍 Discovering tokens from DEXScreener...');
-      
-      // Fetch top pairs from PulseChain on DEXScreener
-      const res = await fetch('https://api.dexscreener.com/latest/dex/pulsechain');
-      
-      if (!res.ok) {
-        console.log('DEXScreener API not available, using known tokens');
-        return KNOWN_TOKENS;
+      console.log('🔍 Discovering tokens from multiple sources...');
+
+      // Check cache first
+      const cachedTokens = this.loadFromCache();
+      if (cachedTokens && cachedTokens.length > 50) {
+        console.log('✅ Using cached tokens');
+        return cachedTokens;
       }
-      
-      const data = await res.json();
-      
-      if (data && data.pairs && Array.isArray(data.pairs)) {
-        console.log(`✅ Found ${data.pairs.length} pairs from DEXScreener`);
-        
-        // Extract unique tokens from pairs
-        const tokens = new Map();
-        
-        for (const pair of data.pairs) {
-          // Add base token
-          if (pair.baseToken && pair.baseToken.address) {
-            tokens.set(pair.baseToken.address.toLowerCase(), {
-              symbol: pair.baseToken.symbol || 'UNKNOWN',
-              addr: pair.baseToken.address,
-              name: pair.baseToken.name,
-              decimals: '18',
-              source: 'dexscreener'
-            });
-          }
-          
-          // Add quote token (usually WPLS)
-          if (pair.quoteToken && pair.quoteToken.address) {
-            tokens.set(pair.quoteToken.address.toLowerCase(), {
-              symbol: pair.quoteToken.symbol || 'UNKNOWN',
-              addr: pair.quoteToken.address,
-              name: pair.quoteToken.name,
-              decimals: '18',
-              source: 'dexscreener'
-            });
-          }
-        }
-        
-        // Merge with known tokens, avoiding duplicates
-        const existingAddrs = new Set(KNOWN_TOKENS.map(t => t.addr.toLowerCase()));
-        const discoveredTokens = Array.from(tokens.values()).filter(t => !existingAddrs.has(t.addr.toLowerCase()));
-        
-        console.log(`✅ Discovered ${discoveredTokens.length} new tokens`);
-        
-        return [...KNOWN_TOKENS, ...discoveredTokens];
+
+      // Fetch from multiple sources in parallel
+      const [dexScreenerTokens, pulseXTokens, nineSwapTokens, pulseCoinListTokens] = await Promise.allSettled([
+        this.fetchFromDexScreener(),
+        this.fetchFromPulseXFactory(),
+        this.fetchFromNineSwap(),
+        this.fetchFromPulseCoinList()
+      ]);
+
+      // Combine all discovered tokens
+      const allTokens = new Map();
+
+      // Add known tokens first
+      KNOWN_TOKENS.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
+
+      // Add DEXScreener tokens
+      if (dexScreenerTokens.status === 'fulfilled') {
+        dexScreenerTokens.value.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
       }
+
+      // Add PulseX tokens
+      if (pulseXTokens.status === 'fulfilled') {
+        pulseXTokens.value.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
+      }
+
+      // Add NineSwap tokens
+      if (nineSwapTokens.status === 'fulfilled') {
+        nineSwapTokens.value.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
+      }
+
+      // Add PulseCoinList tokens
+      if (pulseCoinListTokens.status === 'fulfilled') {
+        pulseCoinListTokens.value.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
+      }
+
+      const finalTokens = Array.from(allTokens.values());
+      console.log(`✅ Discovered ${finalTokens.length} total tokens from all sources`);
+
+      // Save to cache
+      this.saveToCache(finalTokens);
+
+      return finalTokens;
     } catch (err) {
-      console.log('DEXScreener token discovery failed:', err.message);
+      console.log('Token discovery failed:', err.message);
+      return KNOWN_TOKENS;
     }
-    
-    // Fallback: return known tokens
-    return KNOWN_TOKENS;
+  }
+
+  // Fetch from DEXScreener
+  async fetchFromDexScreener() {
+    try {
+      const res = await fetch('https://api.dexscreener.com/latest/dex/pulsechain');
+      if (!res.ok) return [];
+
+      const data = await res.json();
+      if (!data?.pairs) return [];
+
+      const tokens = new Map();
+      for (const pair of data.pairs) {
+        if (pair.baseToken?.address) {
+          tokens.set(pair.baseToken.address.toLowerCase(), {
+            symbol: pair.baseToken.symbol || 'UNKNOWN',
+            addr: pair.baseToken.address,
+            name: pair.baseToken.name,
+            decimals: '18',
+            source: 'dexscreener'
+          });
+        }
+        if (pair.quoteToken?.address) {
+          tokens.set(pair.quoteToken.address.toLowerCase(), {
+            symbol: pair.quoteToken.symbol || 'UNKNOWN',
+            addr: pair.quoteToken.address,
+            name: pair.quoteToken.name,
+            decimals: '18',
+            source: 'dexscreener'
+          });
+        }
+      }
+      return Array.from(tokens.values());
+    } catch (err) {
+      console.warn('DEXScreener fetch failed:', err.message);
+      return [];
+    }
+  }
+
+  // Fetch from PulseX Factory (via blockchain)
+  async fetchFromPulseXFactory() {
+    try {
+      console.log('🔍 Fetching from PulseX Factory...');
+
+      const provider = new ethers.JsonRpcProvider(CONFIG.NETWORK.rpc);
+
+      // PulseX Factory ABI (minimal)
+      const factoryABI = [
+        'function allPairsLength() view returns (uint256)',
+        'function allPairs(uint256) view returns (address)'
+      ];
+
+      const factory = new ethers.Contract(PULSEX_FACTORY, factoryABI, provider);
+
+      // Get total number of pairs
+      const pairCount = await factory.allPairsLength();
+      const count = Number(pairCount);
+
+      console.log(`PulseX has ${count} pairs, fetching last 100...`);
+
+      // Fetch last 100 pairs (most recent)
+      const tokens = new Map();
+      const startIdx = Math.max(0, count - 100);
+
+      const pairABI = [
+        'function token0() view returns (address)',
+        'function token1() view returns (address)'
+      ];
+
+      for (let i = startIdx; i < count; i++) {
+        try {
+          const pairAddress = await factory.allPairs(i);
+          const pair = new ethers.Contract(pairAddress, pairABI, provider);
+
+          const [token0, token1] = await Promise.all([
+            pair.token0(),
+            pair.token1()
+          ]);
+
+          // Add both tokens (skip WPLS to avoid duplicates)
+          if (token0.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+            tokens.set(token0.toLowerCase(), {
+              symbol: 'UNKNOWN',
+              addr: token0,
+              name: 'Token from PulseX',
+              decimals: '18',
+              source: 'pulsex-factory'
+            });
+          }
+          if (token1.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+            tokens.set(token1.toLowerCase(), {
+              symbol: 'UNKNOWN',
+              addr: token1,
+              name: 'Token from PulseX',
+              decimals: '18',
+              source: 'pulsex-factory'
+            });
+          }
+        } catch (e) {
+          // Skip failed pair fetches
+        }
+      }
+
+      console.log(`✅ Found ${tokens.size} tokens from PulseX Factory`);
+      return Array.from(tokens.values());
+    } catch (err) {
+      console.warn('PulseX Factory fetch failed:', err.message);
+      return [];
+    }
+  }
+
+  // Fetch from NineSwap Factory
+  async fetchFromNineSwap() {
+    try {
+      console.log('🔍 Fetching from NineSwap Factory...');
+
+      const provider = new ethers.JsonRpcProvider(CONFIG.NETWORK.rpc);
+      const factoryABI = [
+        'function allPairsLength() view returns (uint256)',
+        'function allPairs(uint256) view returns (address)'
+      ];
+
+      const factory = new ethers.Contract(NINESWAP_FACTORY, factoryABI, provider);
+
+      const pairCount = await factory.allPairsLength();
+      const count = Number(pairCount);
+
+      console.log(`NineSwap has ${count} pairs, fetching last 50...`);
+
+      const tokens = new Map();
+      const startIdx = Math.max(0, count - 50);
+      const pairABI = [
+        'function token0() view returns (address)',
+        'function token1() view returns (address)'
+      ];
+
+      for (let i = startIdx; i < count; i++) {
+        try {
+          const pairAddress = await factory.allPairs(i);
+          const pair = new ethers.Contract(pairAddress, pairABI, provider);
+
+          const [token0, token1] = await Promise.all([
+            pair.token0(),
+            pair.token1()
+          ]);
+
+          if (token0.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+            tokens.set(token0.toLowerCase(), {
+              symbol: 'UNKNOWN',
+              addr: token0,
+              name: 'Token from NineSwap',
+              decimals: '18',
+              source: 'nineswap'
+            });
+          }
+          if (token1.toLowerCase() !== '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'.toLowerCase()) {
+            tokens.set(token1.toLowerCase(), {
+              symbol: 'UNKNOWN',
+              addr: token1,
+              name: 'Token from NineSwap',
+              decimals: '18',
+              source: 'nineswap'
+            });
+          }
+        } catch (e) {
+          // Skip failed pair fetches
+        }
+      }
+
+      console.log(`✅ Found ${tokens.size} tokens from NineSwap`);
+      return Array.from(tokens.values());
+    } catch (err) {
+      console.warn('NineSwap fetch failed:', err.message);
+      return [];
+    }
+  }
+
+  // Fetch from PulseCoinList API
+  async fetchFromPulseCoinList() {
+    try {
+      console.log('🔍 Fetching from PulseCoinList...');
+
+      const res = await fetch(PULSECOINLIST_API);
+      if (!res.ok) return [];
+
+      const data = await res.json();
+
+      if (Array.isArray(data)) {
+        const tokens = data.map(t => ({
+          symbol: t.symbol || 'UNKNOWN',
+          addr: t.address,
+          name: t.name || t.symbol,
+          decimals: '18',
+          source: 'pulsecoinlist'
+        }));
+
+        console.log(`✅ Found ${tokens.length} tokens from PulseCoinList`);
+        return tokens;
+      }
+
+      return [];
+    } catch (err) {
+      console.warn('PulseCoinList fetch failed:', err.message);
+      return [];
+    }
+  }
+
+  // Discover NFT collections from PulseScan
+  async discoverNFTCollections() {
+    try {
+      console.log('🔍 Discovering NFT collections...');
+
+      // Fetch top NFT contracts from PulseScan
+      const res = await this.callAPI({
+        module: "stats",
+        action: "topnft",
+        limit: 50
+      });
+
+      if (res.result && Array.isArray(res.result)) {
+        const collections = res.result.map(nft => ({
+          address: nft.contractAddress,
+          name: nft.contractName || 'Unknown NFT',
+          symbol: nft.contractSymbol || 'NFT',
+          totalSupply: nft.totalSupply || 0,
+          holders: nft.holderCount || 0,
+          transfers: nft.transactionCount || 0,
+          source: 'pulsescan-nft'
+        }));
+
+        console.log(`✅ Found ${collections.length} NFT collections`);
+        this.nftCollections = new Map(collections.map(c => [c.address.toLowerCase(), c]));
+        return collections;
+      }
+
+      return [];
+    } catch (err) {
+      console.warn('NFT discovery failed:', err.message);
+      return [];
+    }
+  }
+
+  // Background sync for continuous updates
+  startBackgroundSync() {
+    console.log('🔄 Starting background sync...');
+
+    // Sync every 5 minutes
+    this.syncInterval = setInterval(async () => {
+      console.log('🔄 Running background sync...');
+      try {
+        // Clear cache to force fresh fetch
+        this.clearCache();
+
+        // Reload tokens
+        await this.load();
+
+        console.log('✅ Background sync complete');
+      } catch (err) {
+        console.error('Background sync failed:', err);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+  }
+
+  stopBackgroundSync() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+      console.log('⏹️ Background sync stopped');
+    }
   }
 
   // Lookup a specific token by address (for user searches)

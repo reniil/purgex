@@ -27,7 +27,7 @@ const CONFIG = {
   PRICE_REFRESH_INTERVAL_MS: 30000,
   TOKEN_DISCOVERY_BATCH: 20,
   APIS: {
-    PULSESCAN_BASE: 'https://api.routescan.io/v2/network/mainnet/evm/369/etherscan',
+    PULSESCAN_BASE: 'https://api.routescan.io/v2/network/mainnet/evm/369/etherscan/api',
     DEXSCREENER_BASE: 'https://api.dexscreener.com/latest/dex/tokens',
     IPULSE_ROUTER: '0x98bf93ebf5c380C0e6Ae8e192A7e2AE08edAcc02',
     IPULSE_FACTORY: '0x43d7dA3090A2F0c8A0b8F9a5E3E4bA6F5E6E8E',

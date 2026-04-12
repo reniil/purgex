@@ -354,7 +354,7 @@ window.homePage = {
     try {
       // Fetch recent transactions from PulseScan API
       const prgxToken = CONFIG.CONTRACTS.PRGX_TOKEN;
-      const apiUrl = `${CONFIG.APIS.PULSESCAN_BASE}/api?module=account&action=tokentx&contractaddress=${prgxToken}&page=1&offset=10&sort=desc`;
+      const apiUrl = `${CONFIG.APIS.PULSESCAN_BASE}?module=account&action=tokentx&contractaddress=${prgxToken}&page=1&offset=10&sort=desc`;
       
       const response = await fetch(apiUrl);
       const data = await response.json();
