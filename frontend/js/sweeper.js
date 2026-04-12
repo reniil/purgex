@@ -582,7 +582,7 @@ class Sweeper {
   // ================================================================
   // PULSEX SWAP INTEGRATION
   // ================================================================
-  async swapOnPulseX(tokenAddress, amount) {
+  async swapOnPulseX(tokenAddress, amount, recipient = null) {
     try {
       if (!window.wallet?.provider || !window.wallet?.signer) {
         throw new Error('Wallet not connected');
@@ -608,12 +608,15 @@ class Sweeper {
       // Get deadline (20 minutes from now)
       const deadline = Math.floor(Date.now() / 1000) + 1200;
 
+      // Use provided recipient or default to treasury
+      const recipientAddress = recipient || CONFIG.CONTRACTS.TREASURY;
+
       // Execute swap
       const tx = await router.swapExactTokensForTokens(
         amount,
         amountOutMin,
         path,
-        CONFIG.CONTRACTS.TREASURY, // Send PRGX to treasury
+        recipientAddress,
         deadline
       );
 
@@ -755,7 +758,8 @@ class Sweeper {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
-          const swapResult = await this.swapOnPulseX(address, token.balance);
+          // Send PRGX to user's wallet for auto-stake
+          const swapResult = await this.swapOnPulseX(address, token.balance, window.wallet.address);
           if (!swapResult.success) {
             // If swap fails, transfer to fallback
             this.updateStatusLog(`⚠️ Swap failed, transferring to fallback: ${address}`, 'warning');
@@ -773,17 +777,27 @@ class Sweeper {
         }
       }
 
-      // Step 8: Calculate total PRGX received and auto-stake
-      let totalPRGXReceived = 0;
-      for (const address of selectedTokenAddresses) {
-        const lookupAddr = address.toLowerCase();
-        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
-        if (token) {
-          totalPRGXReceived += token.estimatedPRGX || 0;
-        }
+      // Step 8: Check actual PRGX balance in wallet and auto-stake
+      this.updateStatusLog('🔍 Checking PRGX balance in wallet...', 'info');
+
+      // Get actual PRGX balance from wallet
+      const prgxContract = new ethers.Contract(
+        CONFIG.CONTRACTS.PRGX_TOKEN,
+        CONFIG.ABIS.ERC20,
+        window.wallet.provider
+      );
+
+      const prgxBalance = await prgxContract.balanceOf(window.wallet.address);
+      const prgxBalanceFormatted = Number(ethers.formatEther(prgxBalance));
+
+      console.log(`Actual PRGX balance in wallet: ${prgxBalanceFormatted}`);
+
+      let stakedAmount = 0;
+      if (prgxBalanceFormatted > 0) {
+        stakedAmount = await this.autoStakePRGX(prgxBalanceFormatted);
+      } else {
+        this.updateStatusLog('ℹ️ No PRGX in wallet to stake', 'info');
       }
-      const netPRGX = totalPRGXReceived * (1 - CONFIG.SWEEP_FEE_PERCENT / 100);
-      const stakedAmount = await this.autoStakePRGX(netPRGX);
 
       // Step 9: Success
       this.updateStatusLog(`✅ Sweep-to-wallet completed! ${stakedAmount > 0 ? stakedAmount.toFixed(4) + ' PRGX auto-staked' : ''}`, 'success');
