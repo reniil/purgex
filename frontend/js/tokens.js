@@ -52,19 +52,31 @@ class TokenDiscovery {
 
       // Strategy E: Transfer event scanning
       console.log('🔍 [DISCOVERY] Strategy E: Transfer event scanning');
-      this.updateDiscoveryStatus('Scanning transfer events...', 90);
+      this.updateDiscoveryStatus('Scanning transfer events...', 80);
       const eventTokens = await this.fetchFromTransferEvents(address);
       console.log(`✅ [DISCOVERY] Transfer events found ${eventTokens.size} tokens`);
 
       // Strategy F: Native PLS token (gas token)
       console.log('🔍 [DISCOVERY] Strategy F: Native PLS token');
-      this.updateDiscoveryStatus('Checking native PLS balance...', 95);
+      this.updateDiscoveryStatus('Checking native PLS balance...', 85);
       const nativeTokens = await this.fetchNativePLS(address);
       console.log(`✅ [DISCOVERY] Native PLS found ${nativeTokens.size} tokens`);
 
+      // Strategy G: PulseX Factory tokens (all tokens with LP pairs)
+      console.log('🔍 [DISCOVERY] Strategy G: PulseX Factory tokens');
+      this.updateDiscoveryStatus('Scanning PulseX Factory for tokens...', 90);
+      const pulseXTokens = await this.fetchFromPulseXFactory(address);
+      console.log(`✅ [DISCOVERY] PulseX Factory found ${pulseXTokens.size} tokens`);
+
+      // Strategy H: NineSwap Factory tokens
+      console.log('🔍 [DISCOVERY] Strategy H: NineSwap Factory tokens');
+      this.updateDiscoveryStatus('Scanning NineSwap Factory for tokens...', 92);
+      const nineSwapTokens = await this.fetchFromNineSwap(address);
+      console.log(`✅ [DISCOVERY] NineSwap found ${nineSwapTokens.size} tokens`);
+
       // Merge and deduplicate
       this.updateDiscoveryStatus('Processing results...', 95);
-      const allTokens = new Map([...directRPCTokens, ...dustTokens, ...ipulseTokens, ...demoTokens, ...eventTokens, ...nativeTokens]);
+      const allTokens = new Map([...directRPCTokens, ...dustTokens, ...ipulseTokens, ...demoTokens, ...eventTokens, ...nativeTokens, ...pulseXTokens, ...nineSwapTokens]);
       console.log(`🔍 [DISCOVERY] Total unique tokens before filtering: ${allTokens.size}`);
 
       // Filter and enrich
@@ -277,6 +289,236 @@ class TokenDiscovery {
       }
     } catch (error) {
       console.error('❌ [NATIVE] Native PLS fetch failed:', error);
+    }
+
+    return tokens;
+  }
+
+  // ================================================================
+  // STRATEGY G: PulseX Factory tokens
+  // ================================================================
+  async fetchFromPulseXFactory(address) {
+    const tokens = new Map();
+
+    try {
+      console.log('🔍 [PULSEX] Starting PulseX Factory token discovery');
+
+      if (!window.wallet?.provider) {
+        console.warn('⚠️ [PULSEX] No wallet provider available');
+        return tokens;
+      }
+
+      const provider = window.wallet.provider;
+      const PULSEX_FACTORY = "0x1715a3E4A142d8b698131108995174F37aEBA10D";
+
+      // Properly checksum the address
+      const checksummedAddress = ethers.getAddress(PULSEX_FACTORY);
+      console.log(`PulseX Factory address (checksummed): ${checksummedAddress}`);
+
+      // PulseX Factory ABI (minimal)
+      const factoryABI = [
+        'function allPairsLength() view returns (uint256)',
+        'function allPairs(uint256) view returns (address)'
+      ];
+
+      const factory = new ethers.Contract(checksummedAddress, factoryABI, provider);
+
+      // Get total number of pairs
+      const pairCount = await factory.allPairsLength();
+      const count = Number(pairCount);
+
+      console.log(`PulseX has ${count} total pairs, fetching last 500 for user balance check...`);
+
+      const pairABI = [
+        'function token0() view returns (address)',
+        'function token1() view returns (address)'
+      ];
+
+      // Process in batches
+      const batchSize = 50;
+      const startIdx = Math.max(0, count - 500); // Last 500 pairs
+      for (let i = startIdx; i < count; i += batchSize) {
+        const endIdx = Math.min(i + batchSize, count);
+        const batchPromises = [];
+
+        for (let j = i; j < endIdx; j++) {
+          batchPromises.push(
+            (async (idx) => {
+              try {
+                const pairAddress = await factory.allPairs(idx);
+                const pair = new ethers.Contract(pairAddress, pairABI, provider);
+
+                const [token0, token1] = await Promise.all([
+                  pair.token0(),
+                  pair.token1()
+                ]);
+
+                // Add both tokens (skip WPLS to avoid duplicates)
+                const wplsAddr = '0xA1077a294dDE1B09bB078844df40758a5D0f9a27';
+                const tokenAddresses = [];
+                if (token0.toLowerCase() !== wplsAddr.toLowerCase()) tokenAddresses.push(token0);
+                if (token1.toLowerCase() !== wplsAddr.toLowerCase()) tokenAddresses.push(token1);
+
+                // Check balance for user
+                for (const tokenAddr of tokenAddresses) {
+                  const checksummedTokenAddr = ethers.getAddress(tokenAddr);
+                  const tokenContract = new ethers.Contract(checksummedTokenAddr, CONFIG.ABIS.ERC20, provider);
+                  const balance = await tokenContract.balanceOf(address);
+
+                  if (balance > 0n) {
+                    try {
+                      const [symbol, name, decimals] = await Promise.all([
+                        tokenContract.symbol(),
+                        tokenContract.name(),
+                        tokenContract.decimals()
+                      ]);
+                      return {
+                        address: checksummedTokenAddr,
+                        symbol: symbol || '???',
+                        name: name || 'Unknown Token',
+                        decimals: Number(decimals) || 18,
+                        balance: balance,
+                        balanceFormatted: ethers.formatUnits(balance, Number(decimals) || 18),
+                        source: 'pulsex-factory'
+                      };
+                    } catch (e) {
+                      // Skip if can't get metadata
+                    }
+                  }
+                }
+                return null;
+              } catch (e) {
+                return null;
+              }
+            })(j)
+          );
+        }
+
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach(result => {
+          if (result) {
+            tokens.set(result.address.toLowerCase(), result);
+          }
+        });
+      }
+
+      console.log(`✅ [PULSEX] Found ${tokens.size} tokens with balance from PulseX Factory`);
+    } catch (error) {
+      console.error('❌ [PULSEX] PulseX Factory fetch failed:', error);
+    }
+
+    return tokens;
+  }
+
+  // ================================================================
+  // STRATEGY H: NineSwap Factory tokens
+  // ================================================================
+  async fetchFromNineSwap(address) {
+    const tokens = new Map();
+
+    try {
+      console.log('🔍 [NINESWAP] Starting NineSwap Factory token discovery');
+
+      if (!window.wallet?.provider) {
+        console.warn('⚠️ [NINESWAP] No wallet provider available');
+        return tokens;
+      }
+
+      const provider = window.wallet.provider;
+      const NINESWAP_FACTORY = "0x6EcCab422D763aC9514C8AB95925C5A12D866874";
+
+      // Properly checksum the address
+      const checksummedAddress = ethers.getAddress(NINESWAP_FACTORY);
+      console.log(`NineSwap Factory address (checksummed): ${checksummedAddress}`);
+
+      const factoryABI = [
+        'function allPairsLength() view returns (uint256)',
+        'function allPairs(uint256) view returns (address)'
+      ];
+
+      const factory = new ethers.Contract(checksummedAddress, factoryABI, provider);
+
+      const pairCount = await factory.allPairsLength();
+      const count = Number(pairCount);
+
+      console.log(`NineSwap has ${count} total pairs, fetching last 250 for user balance check...`);
+
+      const pairABI = [
+        'function token0() view returns (address)',
+        'function token1() view returns (address)'
+      ];
+
+      // Process in batches
+      const batchSize = 50;
+      const startIdx = Math.max(0, count - 250); // Last 250 pairs
+      for (let i = startIdx; i < count; i += batchSize) {
+        const endIdx = Math.min(i + batchSize, count);
+        const batchPromises = [];
+
+        for (let j = i; j < endIdx; j++) {
+          batchPromises.push(
+            (async (idx) => {
+              try {
+                const pairAddress = await factory.allPairs(idx);
+                const pair = new ethers.Contract(pairAddress, pairABI, provider);
+
+                const [token0, token1] = await Promise.all([
+                  pair.token0(),
+                  pair.token1()
+                ]);
+
+                // Add both tokens (skip WPLS to avoid duplicates)
+                const wplsAddr = '0xA1077a294dDE1B09bB078844df40758a5D0f9a27';
+                const tokenAddresses = [];
+                if (token0.toLowerCase() !== wplsAddr.toLowerCase()) tokenAddresses.push(token0);
+                if (token1.toLowerCase() !== wplsAddr.toLowerCase()) tokenAddresses.push(token1);
+
+                // Check balance for user
+                for (const tokenAddr of tokenAddresses) {
+                  const checksummedTokenAddr = ethers.getAddress(tokenAddr);
+                  const tokenContract = new ethers.Contract(checksummedTokenAddr, CONFIG.ABIS.ERC20, provider);
+                  const balance = await tokenContract.balanceOf(address);
+
+                  if (balance > 0n) {
+                    try {
+                      const [symbol, name, decimals] = await Promise.all([
+                        tokenContract.symbol(),
+                        tokenContract.name(),
+                        tokenContract.decimals()
+                      ]);
+                      return {
+                        address: checksummedTokenAddr,
+                        symbol: symbol || '???',
+                        name: name || 'Unknown Token',
+                        decimals: Number(decimals) || 18,
+                        balance: balance,
+                        balanceFormatted: ethers.formatUnits(balance, Number(decimals) || 18),
+                        source: 'nineswap'
+                      };
+                    } catch (e) {
+                      // Skip if can't get metadata
+                    }
+                  }
+                }
+                return null;
+              } catch (e) {
+                return null;
+              }
+            })(j)
+          );
+        }
+
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach(result => {
+          if (result) {
+            tokens.set(result.address.toLowerCase(), result);
+          }
+        });
+      }
+
+      console.log(`✅ [NINESWAP] Found ${tokens.size} tokens with balance from NineSwap`);
+    } catch (error) {
+      console.error('❌ [NINESWAP] NineSwap fetch failed:', error);
     }
 
     return tokens;
@@ -1120,43 +1362,41 @@ class TokenDiscovery {
 
   async addCustomToken(address) {
     if (!window.wallet?.isConnected) return;
-    
+
     try {
       // Validate address
       if (!ethers.isAddress(address)) {
         throw new Error('Invalid token address');
       }
-      
+
       // Check if already discovered
       if (this.discoveredTokens.has(address.toLowerCase())) {
         throw new Error('Token already discovered');
       }
-      
+
       // Fetch balance and metadata
       const balances = await this.batchFetchBalances([address], window.wallet.address);
       const balance = balances[address] || 0n;
-      
-      if (balance <= 0n) {
-        throw new Error('No balance found for this token');
-      }
-      
+
+      // Allow adding tokens even with 0 balance (for undiscovered tokens)
       const metadata = await this.fetchTokenMetadata(address);
       const estimatedValue = await this.estimateTokenValue(address, balance, metadata.decimals);
-      
+      const classification = await this.classifyToken(address);
+
       const token = {
         address: address,
         ...metadata,
         balance: balance,
         balanceFormatted: ethers.formatUnits(balance, metadata.decimals),
-        estimatedUSD: estimatedValue,
-        estimatedPRGX: window.priceOracle ? 
-          window.priceOracle.usdToPRGX(estimatedValue) : 0,
+        estimatedUSD: estimatedValue.estimatedUSD || 0,
+        estimatedPRGX: estimatedValue.estimatedPRGX || 0,
+        classification: classification,
         source: 'custom'
       };
-      
+
       this.discoveredTokens.set(address.toLowerCase(), token);
       this.renderTokenTable(this.discoveredTokens, 'tokenTableBody');
-      
+
       window.wallet.showToast('Token added successfully', 'success');
     } catch (error) {
       console.error('Add custom token failed:', error);
