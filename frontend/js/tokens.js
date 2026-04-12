@@ -32,11 +32,26 @@ class TokenDiscovery {
       const directRPCTokens = await this.fetchFromDirectRPC(address);
       console.log(`✅ [DISCOVERY] Direct RPC found ${directRPCTokens.size} tokens`);
 
+      // Check connection between strategies
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+
       // Strategy B: Known dust tokens
       console.log('🔍 [DISCOVERY] Strategy B: Known dust tokens');
       this.updateDiscoveryStatus('Checking known dust tokens...', 30);
       const dustTokens = await this.fetchKnownDustTokens(address);
       console.log(`✅ [DISCOVERY] Known dust tokens found ${dustTokens.size} tokens`);
+
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Strategy C: iPulse DEX discovery - DISABLED due to ENS issues on PulseChain
       console.log('🔍 [DISCOVERY] Strategy C: iPulse DEX discovery - DISABLED (ENS not supported)');
@@ -56,17 +71,38 @@ class TokenDiscovery {
       const eventTokens = await this.fetchFromTransferEvents(address);
       console.log(`✅ [DISCOVERY] Transfer events found ${eventTokens.size} tokens`);
 
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Strategy F: Native PLS token (gas token)
       console.log('🔍 [DISCOVERY] Strategy F: Native PLS token');
       this.updateDiscoveryStatus('Checking native PLS balance...', 85);
       const nativeTokens = await this.fetchNativePLS(address);
       console.log(`✅ [DISCOVERY] Native PLS found ${nativeTokens.size} tokens`);
 
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Strategy G: PulseX Factory tokens (all tokens with LP pairs)
       console.log('🔍 [DISCOVERY] Strategy G: PulseX Factory tokens');
       this.updateDiscoveryStatus('Scanning PulseX Factory for tokens...', 90);
       const pulseXTokens = await this.fetchFromPulseXFactory(address);
       console.log(`✅ [DISCOVERY] PulseX Factory found ${pulseXTokens.size} tokens`);
+
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Strategy H: NineSwap Factory tokens
       console.log('🔍 [DISCOVERY] Strategy H: NineSwap Factory tokens');
@@ -327,7 +363,7 @@ class TokenDiscovery {
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
 
-      console.log(`PulseX has ${count} total pairs, fetching last 500 for user balance check...`);
+      console.log(`PulseX has ${count} total pairs, fetching last 100 for user balance check...`);
 
       const pairABI = [
         'function token0() view returns (address)',
@@ -335,9 +371,15 @@ class TokenDiscovery {
       ];
 
       // Process in batches
-      const batchSize = 50;
-      const startIdx = Math.max(0, count - 500); // Last 500 pairs
+      const batchSize = 20; // Reduced from 50 to prevent timeout
+      const startIdx = Math.max(0, count - 100); // Reduced from 500 to prevent timeout
       for (let i = startIdx; i < count; i += batchSize) {
+        // Check wallet connection before each batch
+        if (!window.wallet?.isConnected || !window.wallet?.provider) {
+          console.warn('⚠️ [PULSEX] Wallet disconnected during discovery, stopping');
+          break;
+        }
+
         const endIdx = Math.min(i + batchSize, count);
         const batchPromises = [];
 
@@ -400,6 +442,11 @@ class TokenDiscovery {
             tokens.set(result.address.toLowerCase(), result);
           }
         });
+
+        // Add delay between batches to prevent timeout
+        if (i + batchSize < count) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
 
       console.log(`✅ [PULSEX] Found ${tokens.size} tokens with balance from PulseX Factory`);
@@ -441,7 +488,7 @@ class TokenDiscovery {
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
 
-      console.log(`NineSwap has ${count} total pairs, fetching last 250 for user balance check...`);
+      console.log(`NineSwap has ${count} total pairs, fetching last 50 for user balance check...`);
 
       const pairABI = [
         'function token0() view returns (address)',
@@ -449,9 +496,15 @@ class TokenDiscovery {
       ];
 
       // Process in batches
-      const batchSize = 50;
-      const startIdx = Math.max(0, count - 250); // Last 250 pairs
+      const batchSize = 20; // Reduced from 50 to prevent timeout
+      const startIdx = Math.max(0, count - 50); // Reduced from 250 to prevent timeout
       for (let i = startIdx; i < count; i += batchSize) {
+        // Check wallet connection before each batch
+        if (!window.wallet?.isConnected || !window.wallet?.provider) {
+          console.warn('⚠️ [NINESWAP] Wallet disconnected during discovery, stopping');
+          break;
+        }
+
         const endIdx = Math.min(i + batchSize, count);
         const batchPromises = [];
 
@@ -514,6 +567,11 @@ class TokenDiscovery {
             tokens.set(result.address.toLowerCase(), result);
           }
         });
+
+        // Add delay between batches to prevent timeout
+        if (i + batchSize < count) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
 
       console.log(`✅ [NINESWAP] Found ${tokens.size} tokens with balance from NineSwap`);
