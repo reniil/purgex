@@ -49,6 +49,10 @@
         <div class="label">Total Transfers</div>
         <div class="value" id="statTotalTx">—</div>
       </div>
+      <div class="stat-card">
+        <div class="label">Saved Tokens</div>
+        <div class="value" id="statSavedTokens" style="color: #fbbf24;">—</div>
+      </div>
       <div class="stat-card" id="plsBalanceCard" style="display: none;">
         <div class="label">Your PLS Balance</div>
         <div class="value" id="statPLSBalance" style="color: var(--green);">—</div>
@@ -70,6 +74,9 @@
       </button>
       <button class="filter-btn" data-filter="stable" style="padding: 10px 16px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; white-space: nowrap;">
         Stable Pairs
+      </button>
+      <button class="filter-btn" data-filter="saved" style="padding: 10px 16px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; white-space: nowrap;">
+        ⭐ Saved
       </button>
       <select id="factorySort" style="padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--border-1); background: var(--bg-card); font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-2); cursor: pointer; outline: none;">
         <option value="transfers">Sort: Transfers</option>
@@ -122,8 +129,9 @@
 
     <!-- Table -->
     <div class="card" style="overflow: hidden; padding: 0;">
-      <div style="display: grid; grid-template-columns: 50px 1.5fr 140px 100px 120px 100px 90px 80px 100px; background: var(--bg-card-alt); border-bottom: 1px solid var(--border-1); padding: 14px 20px; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">
+      <div style="display: grid; grid-template-columns: 50px 50px 1.5fr 140px 100px 120px 100px 90px 80px 100px; background: var(--bg-card-alt); border-bottom: 1px solid var(--border-1); padding: 14px 20px; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">
         <div>#</div>
+        <div>⭐</div>
         <div>Pair</div>
         <div>Contract</div>
         <div style="color: var(--green);">Your Balance</div>

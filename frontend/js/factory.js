@@ -9,6 +9,7 @@ const PAGE_SIZE = 10;
 const PULSEX_FACTORY = "0x1715a3E4A142d8b698131108995174F37aEBA10D";
 const NINESWAP_FACTORY = "0x6EcCab422D763aC9514C8AB95925C5A12D866874";
 const CACHE_KEY = 'purgeX_factory_tokens';
+const SAVED_TOKENS_KEY = 'purgeX_saved_tokens';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
 // Known PulseChain tokens — real tokens with WPLS pairs on PulseX
@@ -48,6 +49,50 @@ class FactoryPage {
     this.walletBalances = new Map(); // Store wallet token balances
     this.discoveredTokens = new Map(); // Cache for discovered tokens
     this.nftCollections = new Map(); // Cache for NFT collections
+    this.savedTokens = new Set(); // Saved/watchlist tokens
+  }
+
+  // ================================================================
+  // SAVED TOKENS METHODS
+  // ================================================================
+  loadSavedTokens() {
+    try {
+      const saved = localStorage.getItem(SAVED_TOKENS_KEY);
+      if (saved) {
+        const addresses = JSON.parse(saved);
+        this.savedTokens = new Set(addresses);
+        console.log(`✅ Loaded ${this.savedTokens.size} saved tokens`);
+      }
+    } catch (e) {
+      console.warn('Failed to load saved tokens:', e);
+    }
+  }
+
+  saveSavedTokens() {
+    try {
+      const addresses = Array.from(this.savedTokens);
+      localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(addresses));
+      console.log(`✅ Saved ${addresses.length} tokens to watchlist`);
+    } catch (e) {
+      console.warn('Failed to save tokens:', e);
+    }
+  }
+
+  toggleSavedToken(address) {
+    const addrLower = address.toLowerCase();
+    if (this.savedTokens.has(addrLower)) {
+      this.savedTokens.delete(addrLower);
+      console.log(`Removed ${addrLower} from saved tokens`);
+    } else {
+      this.savedTokens.add(addrLower);
+      console.log(`Added ${addrLower} to saved tokens`);
+    }
+    this.saveSavedTokens();
+    this.applyFilters(); // Re-render to show/hide saved indicator
+  }
+
+  isTokenSaved(address) {
+    return this.savedTokens.has(address.toLowerCase());
   }
 
   // ================================================================
@@ -90,6 +135,9 @@ class FactoryPage {
 
   async init() {
     console.log('🏭 Initializing Factory page...');
+
+    // Load saved tokens from localStorage
+    this.loadSavedTokens();
 
     this.setupEventListeners();
     await this.load();
@@ -1147,7 +1195,11 @@ class FactoryPage {
     let list = [...this.pairs];
 
     if (this.filter !== "all") {
-      list = list.filter((p) => p.type === this.filter);
+      if (this.filter === "saved") {
+        list = list.filter((p) => this.isTokenSaved(p.addr));
+      } else {
+        list = list.filter((p) => p.type === this.filter);
+      }
     }
 
     if (this.search.trim()) {
@@ -1175,6 +1227,7 @@ class FactoryPage {
     const lpCount = this.pairs.filter((p) => p.type === "lp").length;
     const stableCount = this.pairs.filter((p) => p.type === "stable").length;
     const totalTx = this.pairs.reduce((s, p) => s + p.transfers, 0);
+    const savedCount = this.savedTokens.size;
 
     const setVal = (id, val) => {
       const el = document.getElementById(id);
@@ -1185,6 +1238,7 @@ class FactoryPage {
     setVal('statLpPairs', lpCount.toLocaleString());
     setVal('statStablePairs', stableCount.toLocaleString());
     setVal('statTotalTx', totalTx.toLocaleString());
+    setVal('statSavedTokens', savedCount.toLocaleString());
   }
 
   renderTable() {
@@ -1230,9 +1284,16 @@ class FactoryPage {
     const hasBalance = walletBalance && walletBalance !== "0";
     const balanceFormatted = walletBalance ? fmtBalance(walletBalance, pair.decimals) : null;
 
+    // Check if token is saved
+    const isSaved = this.isTokenSaved(pair.addr);
+
     return `
-      <div style="display: grid; grid-template-columns: 50px 1.5fr 140px 100px 120px 100px 90px 80px 100px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); align-items: center; transition: background 0.15s;" onmouseover="this.style.background='rgba(124, 58, 237, 0.05)'" onmouseout="this.style.background='transparent'">
+      <div style="display: grid; grid-template-columns: 50px 50px 1.5fr 140px 100px 120px 100px 90px 80px 100px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); align-items: center; transition: background 0.15s;" onmouseover="this.style.background='rgba(124, 58, 237, 0.05)'" onmouseout="this.style.background='transparent'">
         <div style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-3);">${index}</div>
+
+        <button onclick="factoryPage.toggleSavedToken('${pair.addr}')" style="background: none; border: none; cursor: pointer; font-size: 1.2rem; ${isSaved ? 'color: #fbbf24;' : 'color: var(--text-3);'}" title="${isSaved ? 'Remove from saved' : 'Save token'}">
+          ${isSaved ? '⭐' : '☆'}
+        </button>
 
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
