@@ -544,9 +544,9 @@ class FactoryPage {
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
 
-      console.log(`PulseX has ${count} total pairs, fetching all...`);
+      console.log(`PulseX has ${count} total pairs, fetching last 1000...`);
 
-      // Fetch ALL pairs (not just the last 100)
+      // Fetch last 1000 pairs (most recent) instead of all
       const tokens = new Map();
       const pairABI = [
         'function token0() view returns (address)',
@@ -555,7 +555,8 @@ class FactoryPage {
 
       // Process in batches to avoid rate limiting
       const batchSize = 50;
-      for (let i = 0; i < count; i += batchSize) {
+      const startIdx = Math.max(0, count - 1000); // Last 1000 pairs
+      for (let i = startIdx; i < count; i += batchSize) {
         const endIdx = Math.min(i + batchSize, count);
         const batchPromises = [];
 
@@ -634,7 +635,7 @@ class FactoryPage {
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
 
-      console.log(`NineSwap has ${count} total pairs, fetching all...`);
+      console.log(`NineSwap has ${count} total pairs, fetching last 500...`);
 
       const tokens = new Map();
       const pairABI = [
@@ -644,7 +645,8 @@ class FactoryPage {
 
       // Process in batches
       const batchSize = 50;
-      for (let i = 0; i < count; i += batchSize) {
+      const startIdx = Math.max(0, count - 500); // Last 500 pairs
+      for (let i = startIdx; i < count; i += batchSize) {
         const endIdx = Math.min(i + batchSize, count);
         const batchPromises = [];
 
