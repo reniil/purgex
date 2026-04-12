@@ -6,7 +6,7 @@
 const API_BASE = "https://api.scan.pulsechain.com/api";
 const PULSECOINLIST_API = "https://pulsecoinlist.com/api";
 const PAGE_SIZE = 10;
-const PULSEX_FACTORY = "0x1715a3E4a142d8b698131108995174F37aEBA10D";
+const PULSEX_FACTORY = "0x1715a3E4A142d8b698131108995174F37aEBA10D";
 const NINESWAP_FACTORY = "0x6EcCab422D763aC9514C8AB95925C5A12D866874";
 const CACHE_KEY = 'purgeX_factory_tokens';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
@@ -413,11 +413,12 @@ class FactoryPage {
       }
 
       // Fetch from multiple sources in parallel
-      const [dexScreenerTokens, pulseXTokens, nineSwapTokens, pulseCoinListTokens] = await Promise.allSettled([
+      const [dexScreenerTokens, pulseXTokens, nineSwapTokens, pulseCoinListTokens, pulseScanTokens] = await Promise.allSettled([
         this.fetchFromDexScreener(),
         this.fetchFromPulseXFactory(),
         this.fetchFromNineSwap(),
-        this.fetchFromPulseCoinList()
+        this.fetchFromPulseCoinList(),
+        this.fetchFromPulseScan()
       ]);
 
       // Log results from each source
@@ -426,6 +427,7 @@ class FactoryPage {
       console.log(`  - PulseX Factory: ${pulseXTokens.status === 'fulfilled' ? pulseXTokens.value.length : 'failed'}`);
       console.log(`  - NineSwap: ${nineSwapTokens.status === 'fulfilled' ? nineSwapTokens.value.length : 'failed'}`);
       console.log(`  - PulseCoinList: ${pulseCoinListTokens.status === 'fulfilled' ? pulseCoinListTokens.value.length : 'failed'}`);
+      console.log(`  - PulseScan API: ${pulseScanTokens.status === 'fulfilled' ? pulseScanTokens.value.length : 'failed'}`);
 
       // Combine all discovered tokens
       const allTokens = new Map();
@@ -452,6 +454,11 @@ class FactoryPage {
       // Add PulseCoinList tokens
       if (pulseCoinListTokens.status === 'fulfilled') {
         pulseCoinListTokens.value.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
+      }
+
+      // Add PulseScan tokens
+      if (pulseScanTokens.status === 'fulfilled') {
+        pulseScanTokens.value.forEach(t => allTokens.set(t.addr.toLowerCase(), t));
       }
 
       const finalTokens = Array.from(allTokens.values());
@@ -521,13 +528,17 @@ class FactoryPage {
 
       const provider = new ethers.JsonRpcProvider(CONFIG.NETWORK.rpc);
 
+      // Properly checksum the address
+      const checksummedAddress = ethers.getAddress(PULSEX_FACTORY);
+      console.log(`PulseX Factory address (checksummed): ${checksummedAddress}`);
+
       // PulseX Factory ABI (minimal)
       const factoryABI = [
         'function allPairsLength() view returns (uint256)',
         'function allPairs(uint256) view returns (address)'
       ];
 
-      const factory = new ethers.Contract(PULSEX_FACTORY, factoryABI, provider);
+      const factory = new ethers.Contract(checksummedAddress, factoryABI, provider);
 
       // Get total number of pairs
       const pairCount = await factory.allPairsLength();
@@ -608,12 +619,17 @@ class FactoryPage {
       console.log('🔍 Fetching from NineSwap Factory...');
 
       const provider = new ethers.JsonRpcProvider(CONFIG.NETWORK.rpc);
+
+      // Properly checksum the address
+      const checksummedAddress = ethers.getAddress(NINESWAP_FACTORY);
+      console.log(`NineSwap Factory address (checksummed): ${checksummedAddress}`);
+
       const factoryABI = [
         'function allPairsLength() view returns (uint256)',
         'function allPairs(uint256) view returns (address)'
       ];
 
-      const factory = new ethers.Contract(NINESWAP_FACTORY, factoryABI, provider);
+      const factory = new ethers.Contract(checksummedAddress, factoryABI, provider);
 
       const pairCount = await factory.allPairsLength();
       const count = Number(pairCount);
@@ -690,7 +706,10 @@ class FactoryPage {
       console.log('🔍 Fetching from PulseCoinList...');
 
       const res = await fetch(PULSECOINLIST_API);
-      if (!res.ok) return [];
+      if (!res.ok) {
+        console.log('PulseCoinList API not available');
+        return [];
+      }
 
       const data = await res.json();
 
@@ -710,6 +729,54 @@ class FactoryPage {
       return [];
     } catch (err) {
       console.warn('PulseCoinList fetch failed:', err.message);
+      return [];
+    }
+  }
+
+  // Fetch from PulseScan API (fallback for token discovery)
+  async fetchFromPulseScan() {
+    try {
+      console.log('🔍 Fetching from PulseScan API...');
+
+      // Fetch top tokens from PulseScan
+      const res = await this.callAPI({
+        module: "token",
+        action: "tokentx",
+        page: 1,
+        offset: 1000,
+        sort: "desc"
+      });
+
+      if (!res.result || !Array.isArray(res.result)) {
+        console.log('PulseScan API returned no results');
+        return [];
+      }
+
+      console.log(`PulseScan returned ${res.result.length} transactions`);
+
+      // Extract unique token addresses from transactions
+      const tokenAddresses = new Set();
+      res.result.forEach(tx => {
+        if (tx.contractAddress) {
+          tokenAddresses.add(tx.contractAddress.toLowerCase());
+        }
+      });
+
+      console.log(`Found ${tokenAddresses.size} unique token addresses from PulseScan`);
+
+      // Convert to token objects
+      const tokens = Array.from(tokenAddresses).map(addr => ({
+        symbol: 'UNKNOWN',
+        addr: addr,
+        name: 'Token from PulseScan',
+        decimals: '18',
+        source: 'pulsescan'
+      }));
+
+      console.log(`✅ Found ${tokens.length} tokens from PulseScan`);
+      return tokens;
+    } catch (err) {
+      console.warn('PulseScan fetch failed:', err.message);
       return [];
     }
   }
