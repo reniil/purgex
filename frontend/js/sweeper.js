@@ -681,6 +681,46 @@ class Sweeper {
   }
 
   // ================================================================
+  // SWEEP CONTRACT TRANSFER
+  // ================================================================
+  async transferToSweepContract(tokenAddress, amount) {
+    try {
+      if (!window.wallet?.provider || !window.wallet?.signer) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tokenContract = new ethers.Contract(
+        tokenAddress,
+        CONFIG.ABIS.ERC20,
+        window.wallet.signer
+      );
+
+      // Transfer to sweep contract (treasury)
+      const tx = await tokenContract.transfer(
+        CONFIG.CONTRACTS.TREASURY,
+        amount
+      );
+
+      this.updateStatusLog(`📤 Transferring ${this.getTokenSymbol(tokenAddress)} to sweep contract: ${tx.hash}`, 'pending');
+
+      const receipt = await tx.wait();
+      this.updateStatusLog(`✅ Transfer completed: ${receipt.transactionHash}`, 'success');
+
+      return {
+        success: true,
+        txHash: receipt.transactionHash
+      };
+    } catch (error) {
+      console.error(`Sweep contract transfer failed for ${tokenAddress}:`, error);
+      this.updateStatusLog(`❌ Sweep contract transfer failed: ${error.message}`, 'error');
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // ================================================================
   // NEW SWEEP-TO-WALLET METHOD
   // ================================================================
   async executeSweepToWallet(selectedTokenAddresses) {
@@ -753,31 +793,60 @@ class Sweeper {
       this.updateStatusLog('📋 Checking token approvals...', 'info');
       await this.handleApprovals(selectedTokenAddresses);
 
-      // Step 6: Process swappable tokens
+      // Step 6: Process swappable tokens (swap to PRGX directly)
+      this.updateStatusLog('🔄 Swapping swappable tokens to PRGX...', 'info');
+
       for (const address of swappableTokens) {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
-          // Send PRGX to user's wallet for auto-stake
+          // Swap to PRGX and send to user's wallet
           const swapResult = await this.swapOnPulseX(address, token.balance, window.wallet.address);
           if (!swapResult.success) {
-            // If swap fails, transfer to fallback
-            this.updateStatusLog(`⚠️ Swap failed, transferring to fallback: ${address}`, 'warning');
-            await this.transferToFallback(address, token.balance);
+            // If swap fails, transfer to sweep contract as fallback
+            this.updateStatusLog(`⚠️ Swap failed, transferring to sweep contract: ${address}`, 'warning');
+            await this.transferToSweepContract(address, token.balance);
           }
         }
       }
 
-      // Step 7: Process non-swappable tokens
+      // Step 7: Process non-swappable tokens (transfer to sweep contract)
+      this.updateStatusLog('📤 Transferring non-swappable tokens to sweep contract...', 'info');
+
       for (const address of nonSwappableTokens) {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
-          await this.transferToFallback(address, token.balance);
+          await this.transferToSweepContract(address, token.balance);
         }
       }
 
-      // Step 8: Check actual PRGX balance in wallet and auto-stake
+      // Step 8: Call sweep contract to process non-swappable tokens and reward PRGX
+      if (nonSwappableTokens.length > 0) {
+        this.updateStatusLog('🔄 Processing sweep contract for non-swappable tokens...', 'info');
+
+        try {
+          const sweeperContract = new ethers.Contract(
+            CONFIG.CONTRACTS.SWEEPER,
+            CONFIG.ABIS.SWEEPER,
+            window.wallet.signer
+          );
+
+          // Call the sweep contract to process non-swappable tokens
+          const tx = await sweeperContract.sweep(nonSwappableTokens);
+
+          this.updateStatusLog(`⏳ Sweep contract processing: ${tx.hash}`, 'pending');
+
+          const receipt = await tx.wait();
+          this.updateStatusLog(`✅ Sweep contract completed: ${receipt.transactionHash}`, 'success');
+        } catch (error) {
+          console.error('Sweep contract call failed:', error);
+          this.updateStatusLog(`⚠️ Sweep contract call failed: ${error.message}`, 'warning');
+          // Continue anyway - tokens were already transferred
+        }
+      }
+
+      // Step 9: Check actual PRGX balance in wallet and auto-stake
       this.updateStatusLog('🔍 Checking PRGX balance in wallet...', 'info');
 
       // Get actual PRGX balance from wallet
@@ -799,10 +868,10 @@ class Sweeper {
         this.updateStatusLog('ℹ️ No PRGX in wallet to stake', 'info');
       }
 
-      // Step 9: Success
-      this.updateStatusLog(`✅ Sweep-to-wallet completed! ${stakedAmount > 0 ? stakedAmount.toFixed(4) + ' PRGX auto-staked' : ''}`, 'success');
+      // Step 10: Success
+      this.updateStatusLog(`✅ Sweep completed! ${stakedAmount > 0 ? stakedAmount.toFixed(4) + ' PRGX auto-staked' : ''}`, 'success');
 
-      // Step 10: Refresh data
+      // Step 11: Refresh data
       await this.postSweepRefresh();
 
       return { success: true, message: 'Sweep-to-wallet completed', stakedAmount };
