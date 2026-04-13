@@ -26,11 +26,11 @@ class TokenDiscovery {
     this.updateDiscoveryStatus('Scanning wallet for ERC-20 tokens...', 0);
 
     try {
-      // Strategy A: Direct RPC calls
-      console.log('🔍 [DISCOVERY] Strategy A: Direct RPC calls');
-      this.updateDiscoveryStatus('Scanning blockchain for tokens...', 10);
-      const directRPCTokens = await this.fetchFromDirectRPC(address);
-      console.log(`✅ [DISCOVERY] Direct RPC found ${directRPCTokens.size} tokens`);
+      // Strategy 0: Comprehensive token list scan (PRIMARY - uses same method as manual addition)
+      console.log('🔍 [DISCOVERY] Strategy 0: Comprehensive token list scan (PRIMARY)');
+      this.updateDiscoveryStatus('Fetching comprehensive token list and checking balances...', 5);
+      const comprehensiveTokens = await this.fetchFromComprehensiveTokenList(address);
+      console.log(`✅ [DISCOVERY] Comprehensive scan found ${comprehensiveTokens.size} tokens`);
 
       // Check connection between strategies
       if (!window.wallet?.isConnected) {
@@ -40,9 +40,22 @@ class TokenDiscovery {
       }
       await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
 
+      // Strategy A: Direct RPC calls (fallback for tokens not in list)
+      console.log('🔍 [DISCOVERY] Strategy A: Direct RPC calls (fallback)');
+      this.updateDiscoveryStatus('Scanning blockchain for tokens...', 20);
+      const directRPCTokens = await this.fetchFromDirectRPC(address);
+      console.log(`✅ [DISCOVERY] Direct RPC found ${directRPCTokens.size} tokens`);
+
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       // Strategy B: Known dust tokens
       console.log('🔍 [DISCOVERY] Strategy B: Known dust tokens');
-      this.updateDiscoveryStatus('Checking known dust tokens...', 30);
+      this.updateDiscoveryStatus('Checking known dust tokens...', 35);
       const dustTokens = await this.fetchKnownDustTokens(address);
       console.log(`✅ [DISCOVERY] Known dust tokens found ${dustTokens.size} tokens`);
 
@@ -112,7 +125,7 @@ class TokenDiscovery {
 
       // Merge and deduplicate
       this.updateDiscoveryStatus('Processing results...', 95);
-      const allTokens = new Map([...directRPCTokens, ...dustTokens, ...ipulseTokens, ...demoTokens, ...eventTokens, ...nativeTokens, ...pulseXTokens, ...nineSwapTokens]);
+      const allTokens = new Map([...comprehensiveTokens, ...directRPCTokens, ...dustTokens, ...ipulseTokens, ...demoTokens, ...eventTokens, ...nativeTokens, ...pulseXTokens, ...nineSwapTokens]);
       console.log(`🔍 [DISCOVERY] Total unique tokens before filtering: ${allTokens.size}`);
 
       // Filter and enrich
@@ -577,6 +590,184 @@ class TokenDiscovery {
       console.log(`✅ [NINESWAP] Found ${tokens.size} tokens with balance from NineSwap`);
     } catch (error) {
       console.error('❌ [NINESWAP] NineSwap fetch failed:', error);
+    }
+
+    return tokens;
+  }
+
+  // ================================================================
+  // STRATEGY 0: Comprehensive token list scan (PRIMARY)
+  // ================================================================
+  async fetchFromComprehensiveTokenList(address) {
+    const tokens = new Map();
+
+    try {
+      console.log('🔍 [COMPREHENSIVE] Starting comprehensive token list scan');
+
+      if (!window.wallet?.provider) {
+        console.warn('⚠️ [COMPREHENSIVE] No wallet provider available');
+        return tokens;
+      }
+
+      // Try to fetch token list from PulseCoinList API
+      console.log('🔍 [COMPREHENSIVE] Fetching token list from PulseCoinList API...');
+
+      let tokenList = [];
+
+      try {
+        // Fetch from PulseCoinList API
+        const response = await fetch('https://api.pulsecoinlist.com/v1/tokens');
+        if (response.ok) {
+          const data = await response.json();
+          tokenList = data.tokens || [];
+          console.log(`✅ [COMPREHENSIVE] Fetched ${tokenList.length} tokens from PulseCoinList API`);
+        } else {
+          console.warn('⚠️ [COMPREHENSIVE] PulseCoinList API request failed, using fallback');
+        }
+      } catch (error) {
+        console.warn('⚠️ [COMPREHENSIVE] PulseCoinList API error:', error);
+      }
+
+      // Fallback: Use known dust tokens + factory tokens
+      if (tokenList.length === 0) {
+        console.log('🔍 [COMPREHENSIVE] Using fallback: combining known tokens and factory tokens');
+
+        // Add known dust tokens
+        for (const tokenAddr of CONFIG.KNOWN_DUST_TOKENS) {
+          tokenList.push({ address: tokenAddr });
+        }
+
+        // Add PulseX factory tokens (scan more pairs)
+        console.log('🔍 [COMPREHENSIVE] Scanning PulseX factory for token addresses...');
+        const provider = window.wallet.provider;
+        const PULSEX_FACTORY = "0x1715a3E4A142d8b698131108995174F37aEBA10D";
+        const factoryABI = ['function allPairsLength() view returns (uint256)', 'function allPairs(uint256) view returns (address)'];
+        const factory = new ethers.Contract(PULSEX_FACTORY, factoryABI, provider);
+
+        const pairCount = await factory.allPairsLength();
+        const count = Number(pairCount);
+        const scanCount = Math.min(500, count); // Scan up to 500 pairs
+
+        console.log(`🔍 [COMPREHENSIVE] Scanning last ${scanCount} PulseX pairs for token addresses...`);
+
+        const pairABI = ['function token0() view returns (address)', 'function token1() view returns (address)'];
+        const batchSize = 50;
+        const wplsAddr = '0xA1077a294dDE1B09bB078844df40758a5D0f9a27';
+
+        for (let i = Math.max(0, count - scanCount); i < count; i += batchSize) {
+          const endIdx = Math.min(i + batchSize, count);
+
+          for (let j = i; j < endIdx; j++) {
+            try {
+              const pairAddress = await factory.allPairs(j);
+              const pair = new ethers.Contract(pairAddress, pairABI, provider);
+              const [token0, token1] = await Promise.all([pair.token0(), pair.token1()]);
+
+              if (token0.toLowerCase() !== wplsAddr.toLowerCase()) {
+                tokenList.push({ address: token0 });
+              }
+              if (token1.toLowerCase() !== wplsAddr.toLowerCase()) {
+                tokenList.push({ address: token1 });
+              }
+            } catch (e) {
+              // Skip failed pair
+            }
+          }
+
+          // Add delay to prevent timeout
+          if (i + batchSize < count) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+
+        console.log(`✅ [COMPREHENSIVE] Collected ${tokenList.length} token addresses from fallback`);
+      }
+
+      // Deduplicate token addresses
+      const uniqueAddresses = new Set();
+      const uniqueTokenList = [];
+      for (const token of tokenList) {
+        const addr = token.address?.toLowerCase();
+        if (addr && !uniqueAddresses.has(addr)) {
+          uniqueAddresses.add(addr);
+          uniqueTokenList.push(token);
+        }
+      }
+
+      console.log(`🔍 [COMPREHENSIVE] After deduplication: ${uniqueTokenList.length} unique tokens`);
+
+      // Check balances for all tokens (same method as manual addition)
+      console.log('🔍 [COMPREHENSIVE] Checking balances for all tokens...');
+      const batchSize = 50;
+      let checkedCount = 0;
+
+      for (let i = 0; i < uniqueTokenList.length; i += batchSize) {
+        const batch = uniqueTokenList.slice(i, i + batchSize);
+        const balancePromises = batch.map(async (token) => {
+          try {
+            const tokenAddr = token.address;
+            console.log(`🔍 [COMPREHENSIVE] Checking balance for ${tokenAddr} (${checkedCount + 1}/${uniqueTokenList.length})`);
+
+            const tokenContract = new ethers.Contract(tokenAddr, CONFIG.ABIS.ERC20, window.wallet.provider);
+            const balance = await tokenContract.balanceOf(address);
+
+            if (balance > 0n) {
+              console.log(`✅ [COMPREHENSIVE] Token ${tokenAddr} has balance > 0`);
+
+              // Get token metadata (same as manual addition)
+              let symbol = '???';
+              let name = 'Unknown Token';
+              let decimals = 18;
+
+              try {
+                const [sym, nm, dec] = await Promise.all([
+                  tokenContract.symbol(),
+                  tokenContract.name(),
+                  tokenContract.decimals()
+                ]);
+                symbol = sym || '???';
+                name = nm || 'Unknown Token';
+                decimals = Number(dec) || 18;
+              } catch (error) {
+                console.warn(`⚠️ [COMPREHENSIVE] Failed to get metadata for ${tokenAddr}:`, error);
+              }
+
+              return {
+                address: tokenAddr,
+                symbol: symbol,
+                name: name,
+                decimals: decimals,
+                balance: balance,
+                balanceFormatted: ethers.formatUnits(balance, decimals),
+                source: 'comprehensive-scan'
+              };
+            } else {
+              console.log(`⚠️ [COMPREHENSIVE] Token ${tokenAddr} has balance = 0, skipping`);
+            }
+          } catch (error) {
+            console.warn(`❌ [COMPREHENSIVE] Failed to check balance for token:`, error);
+          }
+          checkedCount++;
+          return null;
+        });
+
+        const results = await Promise.all(balancePromises);
+
+        for (const result of results) {
+          if (result) {
+            tokens.set(result.address.toLowerCase(), result);
+          }
+        }
+
+        // Add delay between batches to prevent timeout
+        if (i + batchSize < uniqueTokenList.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      console.log(`✅ [COMPREHENSIVE] Found ${tokens.size} tokens with balance > 0 from comprehensive scan`);
+    } catch (error) {
+      console.error('❌ [COMPREHENSIVE] Comprehensive scan failed:', error);
     }
 
     return tokens;
