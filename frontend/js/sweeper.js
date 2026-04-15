@@ -341,32 +341,8 @@ class Sweeper {
         this.approvalStatus.set(tokenAddress, true);
 
       } catch (approvalError) {
-        console.warn('Real approval failed, checking if sweeper contract exists:', approvalError);
-
-        // Check if sweeper contract exists
-        try {
-          const sweeperContract = new ethers.Contract(
-            CONFIG.CONTRACTS.SWEEPER,
-            CONFIG.ABIS.SWEEPER,
-            window.wallet.provider
-          );
-          await sweeperContract.feePercent();
-
-          // Contract exists but approval failed
-          throw approvalError;
-        } catch (viewError) {
-          console.warn('Sweeper contract not deployed, simulating approval:', viewError);
-
-          // Fallback: Simulate approval for demo
-          this.updateStatusLog(`🧪 Simulating approval for ${this.getTokenSymbol(tokenAddress)}`, 'info');
-
-          // Simulate approval delay
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          this.approvalStatus.set(tokenAddress, true);
-
-          this.updateStatusLog(`✅ Mock approval completed for ${this.getTokenSymbol(tokenAddress)}`, 'success');
-        }
+        console.error('Approval failed:', approvalError);
+        throw approvalError; // Throw real error instead of mocking
       }
     } catch (error) {
       this.updateStatusLog(`❌ Approval failed for ${this.getTokenSymbol(tokenAddress)}: ${error.message}`, 'error');
@@ -393,30 +369,8 @@ class Sweeper {
 
         return tx;
       } catch (contractError) {
-        console.warn('Contract call failed, checking if contract exists:', contractError);
-
-        // Check if contract exists by calling a view function
-        try {
-          await sweeperContract.feePercent();
-          throw contractError; // Contract exists but call failed
-        } catch (viewError) {
-          console.warn('Contract does not exist, simulating sweep:', viewError);
-
-          // Fallback: Simulate sweep for demo purposes
-          this.updateStatusLog('🧪 Contract not deployed - simulating sweep for demo', 'info');
-
-          // Simulate transaction
-          const mockTx = {
-            hash: '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-            wait: async () => {
-              // Simulate 2 second delay
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              return { status: 1, transactionHash: mockTx.hash };
-            }
-          };
-
-          return mockTx;
-        }
+        console.error('Contract call failed:', contractError);
+        throw contractError; // Throw real error instead of mocking
       }
     } catch (error) {
       console.error('Sweep transaction failed:', error);
