@@ -609,6 +609,21 @@ class Sweeper {
         ethers.getAddress(CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase())
       ];
 
+      // Approve router to spend token
+      const tokenContract = new ethers.Contract(
+        ethers.getAddress(tokenAddress.toLowerCase()),
+        CONFIG.ABIS.ERC20,
+        window.wallet.signer
+      );
+
+      const allowance = await tokenContract.allowance(window.wallet.address, router.target);
+      if (allowance < amount) {
+        const approveTx = await tokenContract.approve(router.target, ethers.MaxUint256);
+        this.updateStatusLog(`📝 Approving router for ${this.getTokenSymbol(tokenAddress)}: ${approveTx.hash}`, 'pending');
+        await approveTx.wait();
+        this.updateStatusLog(`✅ Approval confirmed for ${this.getTokenSymbol(tokenAddress)}`, 'success');
+      }
+
       // Get expected output
       const amounts = await router.getAmountsOut(amount, path);
       const expectedPRGX = amounts[2];
@@ -662,14 +677,14 @@ class Sweeper {
       }
 
       const tokenContract = new ethers.Contract(
-        tokenAddress,
+        ethers.getAddress(tokenAddress.toLowerCase()),
         CONFIG.ABIS.ERC20,
         window.wallet.signer
       );
 
       // Transfer to fallback contract
       const tx = await tokenContract.transfer(
-        CONFIG.CONTRACTS.FALLBACK_CONTRACT,
+        ethers.getAddress(CONFIG.CONTRACTS.FALLBACK_CONTRACT.toLowerCase()),
         amount
       );
 
@@ -702,14 +717,14 @@ class Sweeper {
       }
 
       const tokenContract = new ethers.Contract(
-        tokenAddress,
+        ethers.getAddress(tokenAddress.toLowerCase()),
         CONFIG.ABIS.ERC20,
         window.wallet.signer
       );
 
       // Transfer to sweep contract (treasury)
       const tx = await tokenContract.transfer(
-        CONFIG.CONTRACTS.TREASURY,
+        ethers.getAddress(CONFIG.CONTRACTS.TREASURY.toLowerCase()),
         amount
       );
 
