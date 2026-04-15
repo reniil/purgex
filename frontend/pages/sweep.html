@@ -4,6 +4,15 @@
 
 <div class="sweep-page">
 
+  <!-- MAINTENANCE BANNER -->
+  <div style="background: linear-gradient(135deg, #ff6b6b, #ee5a5a); color: white; padding: 1.5rem; text-align: center; margin-bottom: 2rem; border-radius: var(--r-md);">
+    <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔧</div>
+    <h3 style="margin: 0 0 0.5rem 0;">Under Maintenance</h3>
+    <p style="margin: 0; font-size: 0.95rem; opacity: 0.9;">
+      The sweep functionality is currently under maintenance. We're fixing issues with token transfers and swaps. Please check back soon.
+    </p>
+  </div>
+
   <!-- STEP 1: WALLET CONNECTION PANEL -->
   <div class="connect-panel requires-wallet" id="connectPanel">
     <div class="container">
@@ -165,8 +174,8 @@
         
         <hr class="divider">
 
-        <button class="btn-primary" id="purgeBtn" disabled onclick="sweeper.initiateSweep()" style="width: 100%; font-size: 1.1rem;">
-          🔥 PURGE SELECTED
+        <button class="btn-primary" id="purgeBtn" disabled onclick="return false;" style="width: 100%; font-size: 1.1rem; opacity: 0.5; cursor: not-allowed;">
+          � UNDER MAINTENANCE
         </button>
 
         <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-input); border-radius: var(--r-md); font-size: 0.85rem; color: var(--text-3);">
