@@ -826,71 +826,27 @@ class Sweeper {
       this.updateStatusLog('📋 Checking token approvals...', 'info');
       await this.handleApprovals(selectedTokenAddresses);
 
-      // Step 6: Process purgable tokens (attempt swap to PRGX)
-      this.updateStatusLog('🔄 Attempting to swap purgable tokens to PRGX...', 'info');
+      // Step 6: Transfer all tokens to sweep contract (treasury)
+      this.updateStatusLog('� Transferring all selected tokens to sweep contract...', 'info');
 
-      for (const address of purgableTokens) {
+      const allTokens = [...purgableTokens, ...unpurgableTokens];
+      let transferredCount = 0;
+
+      for (const address of allTokens) {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
-        if (token) {
-          // Only attempt swap if token has non-zero balance
-          if (token.balance > 0n) {
-            this.updateStatusLog(`🔄 Attempting to swap ${this.getTokenSymbol(address)} to PRGX...`, 'info');
-            const swapResult = await this.swapOnPulseX(address, token.balance, window.wallet.address);
-            if (!swapResult.success) {
-              // If swap fails, transfer to sweep contract as fallback
-              this.updateStatusLog(`⚠️ Swap failed, transferring to sweep contract: ${address}`, 'warning');
-              await this.transferToSweepContract(address, token.balance);
-            } else {
-              this.updateStatusLog(`✅ Successfully swapped ${this.getTokenSymbol(address)} to PRGX`, 'success');
-            }
-          } else {
-            // Zero balance - transfer to sweep contract
-            this.updateStatusLog(`📤 Zero balance token, transferring to sweep contract: ${address}`, 'info');
-            await this.transferToSweepContract(address, token.balance);
+        if (token && token.balance > 0n) {
+          this.updateStatusLog(`� Transferring ${this.getTokenSymbol(address)} to sweep contract...`, 'info');
+          const transferResult = await this.transferToSweepContract(address, token.balance);
+          if (transferResult.success) {
+            transferredCount++;
           }
         }
       }
 
-      // Step 7: Process unpurgable tokens (transfer to sweep contract if any)
-      if (unpurgableTokens.length > 0) {
-        this.updateStatusLog('📤 Transferring unpurgable tokens to sweep contract...', 'info');
+      this.updateStatusLog(`✅ Transferred ${transferredCount}/${allTokens.length} tokens to sweep contract`, 'success');
 
-        for (const address of unpurgableTokens) {
-          const lookupAddr = address.toLowerCase();
-          const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
-          if (token) {
-            await this.transferToSweepContract(address, token.balance);
-          }
-        }
-      }
-
-      // Step 8: Call sweep contract to process unpurgable tokens and reward PRGX
-      if (unpurgableTokens.length > 0) {
-        this.updateStatusLog('🔄 Processing sweep contract for unpurgable tokens...', 'info');
-
-        try {
-          const sweeperContract = new ethers.Contract(
-            CONFIG.CONTRACTS.SWEEPER,
-            CONFIG.ABIS.SWEEPER,
-            window.wallet.signer
-          );
-
-          // Call the sweep contract to process unpurgable tokens
-          const tx = await sweeperContract.sweep(unpurgableTokens);
-
-          this.updateStatusLog(`⏳ Sweep contract processing: ${tx.hash}`, 'pending');
-
-          const receipt = await tx.wait();
-          this.updateStatusLog(`✅ Sweep contract completed: ${receipt.transactionHash}`, 'success');
-        } catch (error) {
-          console.error('Sweep contract call failed:', error);
-          this.updateStatusLog(`⚠️ Sweep contract call failed: ${error.message}`, 'warning');
-          // Continue anyway - tokens were already transferred
-        }
-      }
-
-      // Step 9: Verify token balances after sweep
+      // Step 7: Verify token balances after sweep
       this.updateStatusLog('🔍 Verifying token balances after sweep...', 'info');
 
       const verificationResults = [];
