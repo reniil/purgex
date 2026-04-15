@@ -166,18 +166,122 @@ class PriceOracle {
     const response = await fetch(
       `${CONFIG.APIS.PULSESCAN_BASE}?module=stats&action=tokenprice&contractaddress=${CONFIG.CONTRACTS.PRGX_TOKEN}`
     );
-    
+
     if (!response.ok) {
       throw new Error('RouteScan API request failed');
     }
-    
+
     const data = await response.json();
-    
+
     if (data.status === '1' && data.result && data.result.usdPrice) {
       return parseFloat(data.result.usdPrice);
     }
-    
+
     throw new Error('No price data in RouteScan response');
+  }
+
+  // ================================================================
+  // SOURCE 5: GeckoTerminal API with rate limiting (no CORS proxy)
+  // ================================================================
+  async fetchFromGeckoTerminal(tokenAddress) {
+    console.log(`🔍 [GECKOTERMINAL] Starting GeckoTerminal price fetch for ${tokenAddress}`);
+
+    const GECKOTERMINAL_DELAY = 6000; // 6 seconds = ~10 calls/minute
+    let lastApiCall = 0;
+
+    // Rate-limited fetch
+    async function rateLimitedFetch(url, retries = 3) {
+      const now = Date.now();
+      const timeSinceLastCall = now - lastApiCall;
+      if (timeSinceLastCall < GECKOTERMINAL_DELAY) {
+        await new Promise(resolve => setTimeout(resolve, GECKOTERMINAL_DELAY - timeSinceLastCall));
+      }
+      lastApiCall = Date.now();
+
+      for (let i = 0; i < retries; i++) {
+        try {
+          const res = await fetch(url, {
+            headers: {
+              'Accept': 'application/json;version=20230203',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          if (res.status === 429) {
+            const delay = Math.pow(2, i) * 1000; // Exponential backoff: 1s, 2s, 4s
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          return res;
+        } catch (e) {
+          if (i === retries - 1) throw e;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      throw new Error('Max retries exceeded');
+    }
+
+    try {
+      // Skip native tokens (0x000...000)
+      if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+        console.log(`⚠️ [GECKOTERMINAL] Skipping native token ${tokenAddress}`);
+        return 0;
+      }
+
+      console.log(`🔍 [GECKOTERMINAL] Fetching price for ${tokenAddress}`);
+      const targetUrl = `${CONFIG.APIS.GECKOTERMINAL}/networks/pulsechain/tokens/${tokenAddress}`;
+      const response = await rateLimitedFetch(targetUrl);
+
+      if (!response.ok) {
+        console.log(`⚠️ [GECKOTERMINAL] Failed to fetch price for ${tokenAddress}:`, response.status);
+        return 0;
+      }
+
+      const data = await response.json();
+      if (data && data.data && data.data.attributes && data.data.attributes.price_usd) {
+        const price = parseFloat(data.data.attributes.price_usd);
+        console.log(`✅ [GECKOTERMINAL] Price for ${tokenAddress}: $${price}`);
+        return price;
+      } else {
+        console.log(`⚠️ [GECKOTERMINAL] No price_usd found for ${tokenAddress}`);
+        return 0;
+      }
+    } catch (e) {
+      console.log(`❌ [GECKOTERMINAL] Error fetching price for ${tokenAddress}:`, e);
+      return 0;
+    }
+  }
+
+  // ================================================================
+  // BATCH PRICE FETCH FROM GECKOTERMINAL (for multiple tokens)
+  // ================================================================
+  async fetchTokenPricesFromGeckoTerminal(tokenAddresses) {
+    console.log(`🔍 [GECKOTERMINAL] Starting batch price fetch for ${tokenAddresses.length} tokens`);
+    const prices = {};
+
+    try {
+      for (const address of tokenAddresses) {
+        // Skip native tokens (0x000...000)
+        if (address.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+          console.log(`⚠️ [GECKOTERMINAL] Skipping native token ${address}`);
+          continue;
+        }
+
+        try {
+          const price = await this.fetchFromGeckoTerminal(address);
+          if (price > 0) {
+            prices[address.toLowerCase()] = price;
+          }
+        } catch (e) {
+          console.log(`⚠️ [GECKOTERMINAL] Error fetching ${address}:`, e);
+        }
+      }
+
+      console.log(`✅ [GECKOTERMINAL] Final prices object:`, prices);
+      return prices;
+    } catch (e) {
+      console.log('❌ [GECKOTERMINAL] Batch price fetch failed:', e);
+      return {};
+    }
   }
 
   // ================================================================
@@ -271,33 +375,53 @@ class PriceOracle {
   }
 
   // ================================================================
-  // FETCH PLS PRICE
+  // FETCH PLS PRICE (using CoinGecko as primary source)
   // ================================================================
   async fetchPLSPrice() {
     try {
+      // Try CoinGecko first (primary source for native token)
+      console.log('🔍 [PRICE] Fetching PLS price from CoinGecko');
       const response = await fetch(
-        `${CONFIG.APIS.DEXSCREENER_BASE}/${CONFIG.CONTRACTS.WPLS}`
+        `${CONFIG.APIS.COINGECKO}/simple/price?ids=pulsechain&vs_currencies=usd`
       );
-      
-      if (!response.ok) {
-        throw new Error('WPLS price fetch failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data.pairs && data.pairs.length > 0) {
-        const pair = data.pairs[0];
-        if (pair.priceUsd) {
-          this.plsPriceUSD = parseFloat(pair.priceUsd);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.pulsechain && data.pulsechain.usd) {
+          this.plsPriceUSD = parseFloat(data.pulsechain.usd);
+          console.log(`✅ [PRICE] PLS price from CoinGecko: $${this.plsPriceUSD}`);
           return this.plsPriceUSD;
         }
       }
-      
-      throw new Error('No WPLS price data found');
     } catch (error) {
-      console.warn('WPLS price fetch failed:', error);
-      return 0;
+      console.warn('⚠️ [PRICE] CoinGecko PLS price fetch failed:', error);
     }
+
+    // Fallback to DEXScreener
+    try {
+      console.log('🔍 [PRICE] Fetching PLS price from DEXScreener (fallback)');
+      const response = await fetch(
+        `${CONFIG.APIS.DEXSCREENER_BASE}/${CONFIG.CONTRACTS.WPLS}`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.pairs && data.pairs.length > 0) {
+          const pair = data.pairs[0];
+          if (pair.priceUsd) {
+            this.plsPriceUSD = parseFloat(pair.priceUsd);
+            console.log(`✅ [PRICE] PLS price from DEXScreener: $${this.plsPriceUSD}`);
+            return this.plsPriceUSD;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [PRICE] DEXScreener PLS price fetch failed:', error);
+    }
+
+    console.warn('❌ [PRICE] All PLS price sources failed');
+    return 0;
   }
 
   // ================================================================

@@ -93,6 +93,9 @@ class WalletManager {
       // Check network
       if (this.chainId !== CONFIG.NETWORK.chainId) {
         await this.switchOrAddNetwork();
+        // Recreate provider after network switch
+        this.provider = new ethers.BrowserProvider(wallet.provider);
+        this.signer = await this.provider.getSigner();
       }
       
       // Save connection info
@@ -154,14 +157,22 @@ class WalletManager {
       this.provider = new ethers.BrowserProvider(wallet.provider);
       const signer = await this.provider.getSigner();
       const network = await this.provider.getNetwork();
-      
+
       // Store connection info
       this.wallet = wallet;
       this.address = signer.address;
       this.signer = signer;
       this.chainId = Number(network.chainId);
       this.isConnected = true;
-      
+
+      // Check network
+      if (this.chainId !== CONFIG.NETWORK.chainId) {
+        await this.switchOrAddNetwork();
+        // Recreate provider after network switch
+        this.provider = new ethers.BrowserProvider(wallet.provider);
+        this.signer = await this.provider.getSigner();
+      }
+
       // Setup event listeners
       this.setupEventListeners();
       

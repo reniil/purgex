@@ -26,11 +26,30 @@ class TokenDiscovery {
     this.updateDiscoveryStatus('Scanning wallet for ERC-20 tokens...', 0);
 
     try {
-      // Strategy 0: Comprehensive token list scan (PRIMARY - uses same method as manual addition)
-      console.log('🔍 [DISCOVERY] Strategy 0: Comprehensive token list scan (PRIMARY)');
-      this.updateDiscoveryStatus('Fetching comprehensive token list and checking balances...', 5);
-      const comprehensiveTokens = await this.fetchFromComprehensiveTokenList(address);
-      console.log(`✅ [DISCOVERY] Comprehensive scan found ${comprehensiveTokens.size} tokens`);
+      // Strategy I: PulseChain Scan API (PRIMARY - uses PulseChain scan API)
+      console.log('🔍 [DISCOVERY] Strategy I: PulseChain Scan API (PRIMARY)');
+      this.updateDiscoveryStatus('Fetching tokens from PulseChain Scan API...', 5);
+      const pulseChainScanTokens = await this.fetchFromPulseChainScan(address);
+      console.log(`✅ [DISCOVERY] PulseChain Scan API found ${pulseChainScanTokens.size} tokens`);
+
+      // Check connection between strategies
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+
+      // Strategy 0: Comprehensive token list scan (fallback - skip if PulseChain Scan succeeded)
+      let comprehensiveTokens = new Map();
+      if (pulseChainScanTokens.size === 0) {
+        console.log('🔍 [DISCOVERY] Strategy 0: Comprehensive token list scan (FALLBACK)');
+        this.updateDiscoveryStatus('Fetching comprehensive token list and checking balances...', 10);
+        comprehensiveTokens = await this.fetchFromComprehensiveTokenList(address);
+        console.log(`✅ [DISCOVERY] Comprehensive scan found ${comprehensiveTokens.size} tokens`);
+      } else {
+        console.log('⚠️ [DISCOVERY] Skipping comprehensive scan - PulseChain Scan API succeeded');
+      }
 
       // Check connection between strategies
       if (!window.wallet?.isConnected) {
@@ -123,26 +142,28 @@ class TokenDiscovery {
       const nineSwapTokens = await this.fetchFromNineSwap(address);
       console.log(`✅ [DISCOVERY] NineSwap found ${nineSwapTokens.size} tokens`);
 
+      if (!window.wallet?.isConnected) {
+        console.warn('⚠️ [DISCOVERY] Wallet disconnected, stopping discovery');
+        this.isDiscovering = false;
+        return this.discoveredTokens;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Strategy J: GeckoTerminal token discovery
+      console.log('🔍 [DISCOVERY] Strategy J: GeckoTerminal token discovery');
+      this.updateDiscoveryStatus('Fetching tokens from GeckoTerminal...', 94);
+      const geckoTerminalTokens = await this.fetchFromGeckoTerminal(address);
+      console.log(`✅ [DISCOVERY] GeckoTerminal found ${geckoTerminalTokens.size} tokens`);
+
       // Merge and deduplicate
       this.updateDiscoveryStatus('Processing results...', 95);
-      const allTokens = new Map([...comprehensiveTokens, ...directRPCTokens, ...dustTokens, ...ipulseTokens, ...demoTokens, ...eventTokens, ...nativeTokens, ...pulseXTokens, ...nineSwapTokens]);
+      const allTokens = new Map([...pulseChainScanTokens, ...comprehensiveTokens, ...directRPCTokens, ...dustTokens, ...ipulseTokens, ...demoTokens, ...eventTokens, ...nativeTokens, ...pulseXTokens, ...nineSwapTokens, ...geckoTerminalTokens]);
       console.log(`🔍 [DISCOVERY] Total unique tokens before filtering: ${allTokens.size}`);
 
       // Filter and enrich
       console.log('🔍 [DISCOVERY] Filtering and enriching tokens');
       const filteredTokens = await this.filterAndEnrichTokens(allTokens);
       console.log(`✅ [DISCOVERY] Tokens after filtering: ${filteredTokens.size}`);
-
-      // If no tokens found, add fallback demo tokens
-      if (filteredTokens.size === 0) {
-        console.log('⚠️ [DISCOVERY] No tokens found, adding fallback demo tokens');
-        const fallbackTokens = await this.fetchDemoTokens(address);
-        const enrichedFallback = await this.filterAndEnrichTokens(fallbackTokens);
-        filteredTokens.clear();
-        for (const [addr, token] of enrichedFallback) {
-          filteredTokens.set(addr, token);
-        }
-      }
 
       // Sort by estimated value
       const sortedTokens = this.sortTokensByValue(filteredTokens);
@@ -488,7 +509,7 @@ class TokenDiscovery {
       const NINESWAP_FACTORY = "0x6EcCab422D763aC9514C8AB95925C5A12D866874";
 
       // Properly checksum the address
-      const checksummedAddress = ethers.getAddress(NINESWAP_FACTORY);
+      const checksummedAddress = ethers.getAddress(NINESWAP_FACTORY.toLowerCase());
       console.log(`NineSwap Factory address (checksummed): ${checksummedAddress}`);
 
       const factoryABI = [
@@ -774,38 +795,192 @@ class TokenDiscovery {
   }
 
   // ================================================================
-  // STRATEGY D: Demo tokens (for testing)
+  // STRATEGY J: GeckoTerminal token discovery
   // ================================================================
-  async fetchDemoTokens(address) {
+  async fetchFromGeckoTerminal(address) {
     const tokens = new Map();
-    
-    // Add some demo tokens for testing
-    const demoTokens = [
-      {
-        address: '0xA1077a294dDE1B09bB078844df40758a5D0f9a27',
-        symbol: 'WPLS',
-        name: 'Wrapped PulseChain',
-        decimals: 18,
-        balance: ethers.parseEther('0.1'),
-        source: 'demo'
-      },
-      {
-        address: '0x02f26235791bf5e65a3253aa06845c0451237567',
-        symbol: 'PLS',
-        name: 'PulseChain',
-        decimals: 18,
-        balance: ethers.parseEther('1.5'),
-        source: 'demo'
+
+    try {
+      console.log('🔍 [GECKOTERMINAL] Starting GeckoTerminal token discovery');
+
+      if (!window.wallet?.provider) {
+        console.warn('⚠️ [GECKOTERMINAL] No wallet provider available');
+        return tokens;
       }
-    ];
-    
-    for (const token of demoTokens) {
-      tokens.set(token.address.toLowerCase(), {
-        ...token,
-        balanceFormatted: ethers.formatUnits(token.balance, token.decimals)
-      });
+
+      const provider = window.wallet.provider;
+
+      // Get token list from GeckoTerminal API for PulseChain
+      // GeckoTerminal uses chain ID 369 for PulseChain
+      const geckoTerminalUrl = 'https://api.geckoterminal.com/api/v2/networks/pulsechain/tokens';
+
+      try {
+        console.log('🔍 [GECKOTERMINAL] Fetching token list from GeckoTerminal...');
+        const response = await fetch(geckoTerminalUrl);
+
+        if (!response.ok) {
+          console.warn('⚠️ [GECKOTERMINAL] GeckoTerminal API request failed:', response.status);
+          return tokens;
+        }
+
+        const data = await response.json();
+        const tokenList = data.data || [];
+
+        console.log(`✅ [GECKOTERMINAL] Fetched ${tokenList.length} tokens from GeckoTerminal`);
+
+        // Check balances for user's address
+        const balancePromises = tokenList.map(async (token) => {
+          try {
+            const tokenAddress = token.attributes.address;
+            const checksummedAddress = ethers.getAddress(tokenAddress);
+
+            const tokenContract = new ethers.Contract(
+              checksummedAddress,
+              CONFIG.ABIS.ERC20,
+              provider
+            );
+
+            const balance = await tokenContract.balanceOf(address);
+
+            if (balance > 0n) {
+              const symbol = token.attributes.symbol || '???';
+              const name = token.attributes.name || 'Unknown Token';
+              const decimals = token.attributes.decimals || 18;
+
+              return {
+                address: checksummedAddress,
+                symbol: symbol,
+                name: name,
+                decimals: Number(decimals),
+                balance: balance,
+                balanceFormatted: ethers.formatUnits(balance, Number(decimals)),
+                source: 'geckoterminal'
+              };
+            }
+          } catch (error) {
+            console.warn(`⚠️ [GECKOTERMINAL] Failed to check balance for token:`, error);
+          }
+          return null;
+        });
+
+        const results = await Promise.all(balancePromises);
+
+        for (const result of results) {
+          if (result) {
+            tokens.set(result.address.toLowerCase(), result);
+          }
+        }
+
+        console.log(`✅ [GECKOTERMINAL] Found ${tokens.size} tokens with balance > 0 from GeckoTerminal`);
+      } catch (error) {
+        console.error('❌ [GECKOTERMINAL] GeckoTerminal fetch failed:', error);
+      }
+    } catch (error) {
+      console.error('❌ [GECKOTERMINAL] GeckoTerminal discovery failed:', error);
     }
-    
+
+    return tokens;
+  }
+
+  // ================================================================
+  // STRATEGY I: PulseChain Scan API (PRIMARY - uses PulseChain scan API)
+  // ================================================================
+  async fetchFromPulseChainScan(address) {
+    const tokens = new Map();
+
+    try {
+      console.log('🔍 [PULSECHAIN_SCAN] Starting PulseChain Scan API token discovery');
+
+      const API_DELAY = 2000; // 2 second delay between API calls
+      let lastApiCall = 0;
+
+      // Rate-limited fetch with exponential backoff
+      async function rateLimitedFetch(url, retries = 3) {
+        const now = Date.now();
+        const timeSinceLastCall = now - lastApiCall;
+        if (timeSinceLastCall < API_DELAY) {
+          await new Promise(resolve => setTimeout(resolve, API_DELAY - timeSinceLastCall));
+        }
+        lastApiCall = Date.now();
+
+        for (let i = 0; i < retries; i++) {
+          try {
+            const res = await fetch(url);
+            if (res.status === 429) {
+              const delay = Math.pow(2, i) * 1000; // Exponential backoff: 1s, 2s, 4s
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            return res;
+          } catch (e) {
+            if (i === retries - 1) throw e;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+        throw new Error('Max retries exceeded');
+      }
+
+      // Fetch token list from PulseChain Scan API
+      const tokenListUrl = `${CONFIG.APIS.PULSECHAIN_SCAN}?module=account&action=tokenlist&address=${address}`;
+      console.log(`🔍 [PULSECHAIN_SCAN] Fetching token list from: ${tokenListUrl}`);
+
+      const response = await rateLimitedFetch(tokenListUrl);
+
+      if (!response.ok) {
+        throw new Error(`PulseChain Scan API request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.status !== '1' || !data.result) {
+        console.warn('⚠️ [PULSECHAIN_SCAN] No token data in response');
+        return tokens;
+      }
+
+      console.log(`✅ [PULSECHAIN_SCAN] Found ${data.result.length} tokens from PulseChain Scan API`);
+
+      // Process tokens
+      for (const tokenData of data.result) {
+        try {
+          const tokenAddress = tokenData.contractAddress?.toLowerCase();
+          if (!tokenAddress) continue;
+
+          // Skip zero address
+          if (tokenAddress === '0x0000000000000000000000000000000000000000') {
+            console.log(`⚠️ [PULSECHAIN_SCAN] Skipping zero address`);
+            continue;
+          }
+
+          const balance = tokenData.balance || '0';
+          const balanceBigInt = BigInt(balance);
+
+          // Only include tokens with balance > 0
+          if (balanceBigInt <= 0n) {
+            console.log(`⚠️ [PULSECHAIN_SCAN] Token ${tokenAddress} has balance = 0, skipping`);
+            continue;
+          }
+
+          console.log(`✅ [PULSECHAIN_SCAN] Token ${tokenAddress} has balance > 0: ${balance}`);
+
+          tokens.set(tokenAddress, {
+            address: tokenAddress,
+            symbol: tokenData.symbol || '???',
+            name: tokenData.name || 'Unknown Token',
+            decimals: parseInt(tokenData.decimals) || 18,
+            balance: balanceBigInt,
+            balanceFormatted: ethers.formatUnits(balanceBigInt, parseInt(tokenData.decimals) || 18),
+            source: 'pulsechain-scan'
+          });
+        } catch (error) {
+          console.warn(`⚠️ [PULSECHAIN_SCAN] Failed to process token:`, error);
+        }
+      }
+
+      console.log(`✅ [PULSECHAIN_SCAN] Processed ${tokens.size} tokens with balance > 0`);
+    } catch (error) {
+      console.error('❌ [PULSECHAIN_SCAN] PulseChain Scan API discovery failed:', error);
+    }
+
     return tokens;
   }
 
@@ -1101,64 +1276,14 @@ class TokenDiscovery {
   // TOKEN CLASSIFICATION
   // ================================================================
   async classifyToken(tokenAddress) {
-    if (!CONFIG.SWEEP_CONFIG.AUTO_CLASSIFY) {
-      return 'unknown';
+    // PRGX is the only unpurgable token (can't be changed into itself)
+    if (tokenAddress.toLowerCase() === CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase()) {
+      return 'unpurgable';
     }
 
-    try {
-      if (!window.wallet?.provider) {
-        return 'unknown';
-      }
-
-      // Check if token has a pair on PulseX
-      const factory = new ethers.Contract(
-        CONFIG.APIS.PULSEX_FACTORY,
-        ['function getPair(address,address) view returns (address)'],
-        window.wallet.provider
-      );
-
-      // Try to get pair with WPLS
-      let pairAddress;
-      try {
-        pairAddress = await factory.getPair(tokenAddress, CONFIG.CONTRACTS.WPLS);
-      } catch (factoryError) {
-        console.warn(`Factory call failed for ${tokenAddress}, treating as non-swappable:`, factoryError);
-        return 'non-swappable';
-      }
-
-      if (!pairAddress || pairAddress === '0x0000000000000000000000000000000000000000') {
-        return 'non-swappable';
-      }
-
-      // Check if pair has liquidity
-      const pair = new ethers.Contract(
-        pairAddress,
-        ['function getReserves() view returns (uint112,uint112,uint32)'],
-        window.wallet.provider
-      );
-
-      let reserve0, reserve1;
-      try {
-        [reserve0, reserve1] = await pair.getReserves();
-      } catch (reserveError) {
-        console.warn(`Reserves call failed for pair ${pairAddress}, treating as non-swappable:`, reserveError);
-        return 'non-swappable';
-      }
-
-      const totalReserves = reserve0 + reserve1;
-
-      // Convert to USD (rough estimate)
-      const reserveValue = Number(ethers.formatEther(totalReserves)) * 0.001; // Assume $0.001 per token
-
-      if (reserveValue >= CONFIG.SWEEP_CONFIG.MIN_LIQUIDITY_THRESHOLD) {
-        return 'swappable';
-      } else {
-        return 'non-swappable';
-      }
-    } catch (error) {
-      console.warn(`Token classification failed for ${tokenAddress}, treating as unknown:`, error);
-      return 'unknown';
-    }
+    // All other tokens are purgable (can be swept)
+    // We'll attempt to swap them; if swap fails, they'll be sent to sweep contract
+    return 'purgable';
   }
 
   // ================================================================
@@ -1174,7 +1299,7 @@ class TokenDiscovery {
         const plsValue = await this.estimatePLSValue(token.balance, 18);
         filtered.set(address, {
           ...token,
-          classification: 'non-swappable', // Native PLS cannot be swept
+          classification: 'unpurgable', // Native PLS cannot be swept
           estimatedUSD: plsValue.estimatedUSD || 0,
           estimatedPRGX: plsValue.estimatedPRGX || 0
         });
@@ -1184,7 +1309,7 @@ class TokenDiscovery {
       // Note: Removed zero-balance filter to allow all tokens to be discovered
       // including custom created, rugpulls, and zero-balance tokens
 
-      // Classify token (swappable vs non-swappable)
+      // Classify token (purgable vs unpurgable)
       const classification = await this.classifyToken(address);
 
       // Estimate value
@@ -1348,7 +1473,21 @@ class TokenDiscovery {
         console.warn(`⚠️ [PRICE] PulseCoinList fetch failed for ${address}:`, pulsecoinlistError);
       }
 
-      // Fallback: Try DEXScreener if PulseCoinList failed
+      // Try GeckoTerminal API with CORS proxy and rate limiting
+      if (tokenPriceUSD === 0) {
+        try {
+          console.log(`🔍 [PRICE] Fetching price from GeckoTerminal for ${address}`);
+          const geckoPrice = await window.priceOracle.fetchFromGeckoTerminal(address);
+          if (geckoPrice > 0) {
+            tokenPriceUSD = geckoPrice;
+            console.log(`✅ [PRICE] GeckoTerminal price for ${address}: $${tokenPriceUSD}`);
+          }
+        } catch (geckoError) {
+          console.warn(`⚠️ [PRICE] GeckoTerminal fetch failed for ${address}:`, geckoError);
+        }
+      }
+
+      // Fallback: Try DEXScreener if GeckoTerminal failed
       if (tokenPriceUSD === 0) {
         try {
           console.log(`🔍 [PRICE] Fetching price from DEXScreener for ${address}`);
@@ -1462,10 +1601,10 @@ class TokenDiscovery {
 
       // Determine classification badge
       let classificationBadge = '';
-      if (token.classification === 'swappable') {
-        classificationBadge = '<span class="badge badge-green">Swappable</span>';
-      } else if (token.classification === 'non-swappable') {
-        classificationBadge = '<span class="badge badge-red">Non-Swappable</span>';
+      if (token.classification === 'purgable') {
+        classificationBadge = '<span class="badge badge-green">Purgable</span>';
+      } else if (token.classification === 'unpurgable') {
+        classificationBadge = '<span class="badge badge-red">Unpurgable</span>';
       } else {
         classificationBadge = '<span class="badge badge-gray">Unknown</span>';
       }
@@ -1536,16 +1675,18 @@ class TokenDiscovery {
   updateSweepSummary() {
     const selectedCount = document.getElementById('selectedCount');
     const estimatedPRGX = document.getElementById('estimatedPRGX');
+    const baseReward = document.getElementById('baseReward');
+    const totalPRGXEl = document.getElementById('totalPRGX');
     const estimatedUSD = document.getElementById('estimatedUSD');
     const purgeBtn = document.getElementById('purgeBtn');
-    
-    if (!selectedCount || !estimatedPRGX || !estimatedUSD || !purgeBtn) return;
-    
+
+    if (!selectedCount || !estimatedPRGX || !baseReward || !totalPRGXEl || !estimatedUSD || !purgeBtn) return;
+
     selectedCount.textContent = this.selectedTokens.size;
-    
+
     let totalPRGX = 0;
     let totalUSD = 0;
-    
+
     for (const address of this.selectedTokens) {
       const token = this.discoveredTokens.get(address);
       if (token) {
@@ -1553,10 +1694,21 @@ class TokenDiscovery {
         totalUSD += token.estimatedUSD;
       }
     }
-    
-    estimatedPRGX.textContent = totalPRGX.toFixed(2);
+
+    // Apply protocol fee
+    const feePercent = CONFIG.SWEEP_FEE_PERCENT / 100;
+    const feeAmount = totalPRGX * feePercent;
+    const netPRGX = totalPRGX - feeAmount;
+
+    // Add base reward
+    const baseRewardAmount = window.sweeper ? window.sweeper.BASE_REWARD : 100;
+    const totalWithBonus = netPRGX + baseRewardAmount;
+
+    estimatedPRGX.textContent = netPRGX.toFixed(2);
+    baseReward.textContent = `+${baseRewardAmount} PRGX`;
+    totalPRGXEl.textContent = totalWithBonus.toFixed(2);
     estimatedUSD.textContent = `$${totalUSD.toFixed(6)}`;
-    
+
     // Enable/disable purge button
     purgeBtn.disabled = this.selectedTokens.size === 0;
   }

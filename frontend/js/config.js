@@ -33,6 +33,10 @@ const CONFIG = {
     IPULSE_FACTORY: '0x43d7dA3090A2F0c8A0b8F9a5E3E4bA6F5E6E8E',
     PULSEX_ROUTER: '0x165C341Df11E16e97605F8f84Ee5E475e902B82b', // PulseX router on PulseChain
     PULSEX_FACTORY: '0x1715a3E4A142d8b698131108995174F37aEBA10D', // PulseX factory on PulseChain
+    PULSECHAIN_SCAN: 'https://api.scan.pulsechain.com/api', // PulseChain scan API for token discovery
+    GECKOTERMINAL: 'https://api.geckoterminal.com/api/v2', // GeckoTerminal API for price discovery
+    COINGECKO: 'https://api.coingecko.com/api/v3', // CoinGecko API for native token prices
+    CORS_PROXY: 'https://corsproxy.io/?', // CORS proxy for API calls
   },
   SWEEP_CONFIG: {
     MIN_LIQUIDITY_THRESHOLD: 1000, // Minimum liquidity in USD to consider swappable

@@ -11,7 +11,7 @@ class StakingManager {
     this.lastUnstakeTime = null;
     this.cooldownData = null;
     this.cooldownInterval = null;
-    this.COOLDOWN_PERIOD = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
+    this.COOLDOWN_PERIOD = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
   }
 
   // ================================================================

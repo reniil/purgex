@@ -8,6 +8,7 @@ class Sweeper {
     this.selectedTokens = [];
     this.approvalStatus = new Map();
     this.autoStakeEnabled = true; // Default to enabled
+    this.BASE_REWARD = 100; // Base reward of 100 PRGX for every sweep
   }
 
   toggleAutoStake(enabled) {
@@ -15,6 +16,45 @@ class Sweeper {
     console.log('Auto-stake toggled:', enabled);
     if (window.wallet?.showToast) {
       window.wallet.showToast(`Auto-stake ${enabled ? 'enabled' : 'disabled'}`, 'info');
+    }
+  }
+
+  // ================================================================
+  // SAFE PARSE ETHER - Handles very small numbers and scientific notation
+  // ================================================================
+  safeParseEther(value) {
+    try {
+      // If value is 0 or very close to 0, return 0n
+      if (!value || value === 0 || Math.abs(value) < 1e-18) {
+        return 0n;
+      }
+
+      // Convert to string and handle scientific notation
+      const valueStr = value.toString();
+
+      // If it's in scientific notation, convert to decimal
+      if (valueStr.includes('e')) {
+        const [base, exponent] = valueStr.split('e');
+        const exp = parseInt(exponent);
+        const num = parseFloat(base);
+
+        // If exponent is negative, we have a very small number
+        if (exp < -18) {
+          // Too small to represent in wei, return 0
+          return 0n;
+        }
+
+        // Convert to fixed-point notation
+        const decimalPlaces = Math.abs(exp);
+        const fixedValue = num.toFixed(decimalPlaces + 18);
+        return ethers.parseUnits(fixedValue, 'ether');
+      }
+
+      // Normal case - use parseEther directly
+      return ethers.parseEther(valueStr);
+    } catch (error) {
+      console.warn('safeParseEther failed, returning 0:', error, value);
+      return 0n;
     }
   }
 
@@ -62,16 +102,16 @@ class Sweeper {
       const receipt = await tx.wait();
 
       // Step 7: Success
-      this.updateStatusLog(`✅ Sweep successful! Received ${estimate.netAmount} PRGX`, 'success');
+      this.updateStatusLog(`✅ Sweep successful! Received ${estimate.totalWithBonus} PRGX (including ${estimate.baseReward} bonus)`, 'success');
       this.showTransactionLink(tx.hash);
 
       // Step 8: Auto-stake PRGX
-      const stakedAmount = await this.autoStakePRGX(estimate.netAmount);
+      const stakedAmount = await this.autoStakePRGX(estimate.totalWithBonus);
 
       // Step 9: Refresh data
       await this.postSweepRefresh();
 
-      return { success: true, txHash: tx.hash, prgxReceived: estimate.netAmount, stakedAmount };
+      return { success: true, txHash: tx.hash, prgxReceived: estimate.totalWithBonus, stakedAmount };
     } catch (error) {
       this.updateStatusLog(`❌ Sweep failed: ${error.message}`, 'error');
       throw error;
@@ -140,16 +180,20 @@ class Sweeper {
         
         const feeAmount = prgxAmount * (CONFIG.SWEEP_FEE_PERCENT / 100);
         const netAmount = prgxAmount - feeAmount;
+        const baseReward = this.BASE_REWARD;
+        const totalWithBonus = netAmount + baseReward;
 
         const usdValue = window.priceOracle ?
-          window.priceOracle.prgxToUSD(netAmount) : 0;
+          window.priceOracle.prgxToUSD(totalWithBonus) : 0;
 
-        console.log('✅ Real contract estimate successful:', { prgxAmount, feeAmount, netAmount });
+        console.log('✅ Real contract estimate successful:', { prgxAmount, feeAmount, netAmount, baseReward, totalWithBonus });
 
         return {
           grossAmount: prgxAmount,
           feeAmount: feeAmount,
           netAmount: netAmount,
+          baseReward: baseReward,
+          totalWithBonus: totalWithBonus,
           usdValue: usdValue,
           rawEstimate: estimate
         };
@@ -194,15 +238,19 @@ class Sweeper {
         
         const feeAmount = totalPRGX * (CONFIG.SWEEP_FEE_PERCENT / 100);
         const netAmount = totalPRGX - feeAmount;
-        
-        console.log('📊 Fallback estimate:', { totalPRGX, totalUSD, swappableCount, nonSwappableCount });
-        
+        const baseReward = this.BASE_REWARD;
+        const totalWithBonus = netAmount + baseReward;
+
+        console.log('📊 Fallback estimate:', { totalPRGX, totalUSD, swappableCount, nonSwappableCount, baseReward, totalWithBonus });
+
         return {
           grossAmount: totalPRGX,
           feeAmount: feeAmount,
           netAmount: netAmount,
+          baseReward: baseReward,
+          totalWithBonus: totalWithBonus,
           usdValue: totalUSD,
-          rawEstimate: ethers.parseEther(totalPRGX.toString()),
+          rawEstimate: this.safeParseEther(totalPRGX),
           swappableCount,
           nonSwappableCount
         };
@@ -454,9 +502,17 @@ class Sweeper {
             <span>Protocol Fee (${CONFIG.SWEEP_FEE_PERCENT}%):</span>
             <span class="mono">${estimate.feeAmount.toFixed(4)} PRGX</span>
           </div>
-          <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 1.1rem;">
-            <span>You will receive:</span>
-            <span class="mono" style="color: var(--primary-light);">${estimate.netAmount.toFixed(4)} PRGX</span>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span>Net PRGX from sweep:</span>
+            <span class="mono">${estimate.netAmount.toFixed(4)} PRGX</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; color: var(--green);">
+            <span>🎁 Base Reward:</span>
+            <span class="mono" style="color: var(--green);">+${estimate.baseReward.toFixed(4)} PRGX</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 1.1rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-1);">
+            <span>Total you will receive:</span>
+            <span class="mono" style="color: var(--primary-light);">${estimate.totalWithBonus.toFixed(4)} PRGX</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; color: var(--text-3);">
             <span>Estimated USD value:</span>
@@ -542,34 +598,32 @@ class Sweeper {
       const selectedTokens = Array.from(window.tokenDiscovery.selectedTokens);
 
       // Check token classifications to determine routing
-      let hasNonSwappable = false;
-      let hasSwappable = false;
+      let hasUnpurgable = false;
+      let hasPurgable = false;
 
       for (const address of selectedTokens) {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
-          if (token.classification === 'non-swappable' || token.classification === 'unknown') {
-            hasNonSwappable = true;
-          } else if (token.classification === 'swappable') {
-            hasSwappable = true;
+          if (token.classification === 'unpurgable') {
+            hasUnpurgable = true;
+          } else if (token.classification === 'purgable') {
+            hasPurgable = true;
           }
         }
       }
 
       // Route to appropriate sweep method
-      if (hasNonSwappable) {
-        // Use sweep-to-wallet for non-swappable tokens
-        this.updateStatusLog('🔄 Using sweep-to-wallet for non-swappable tokens', 'info');
+      if (hasUnpurgable && hasPurgable) {
+        // Mixed tokens - use sweep-to-wallet
         await this.executeSweepToWallet(selectedTokens);
-      } else if (hasSwappable) {
-        // Use sweep-to-wallet for swappable tokens (to avoid burning)
-        this.updateStatusLog('🔄 Using sweep-to-wallet for swappable tokens', 'info');
-        await this.executeSweepToWallet(selectedTokens);
+      } else if (hasUnpurgable) {
+        // Only unpurgable - skip these (can't be swept)
+        window.wallet.showToast('Selected tokens cannot be swept', 'error');
+        return;
       } else {
-        // Fallback to original sweep if classification unknown
-        this.updateStatusLog('🔄 Using original sweep method', 'info');
-        await this.executeSweep(selectedTokens);
+        // Only purgable - use sweep-to-wallet
+        await this.executeSweepToWallet(selectedTokens);
       }
 
       window.wallet.showToast('Sweep completed successfully!', 'success');
@@ -743,22 +797,22 @@ class Sweeper {
 
       // Step 2: Classify tokens
       this.updateStatusLog('🔬 Classifying tokens...', 'info');
-      const swappableTokens = [];
-      const nonSwappableTokens = [];
+      const purgableTokens = [];
+      const unpurgableTokens = [];
 
       for (const address of selectedTokenAddresses) {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
-          if (token.classification === 'swappable') {
-            swappableTokens.push(address);
+          if (token.classification === 'purgable') {
+            purgableTokens.push(address);
           } else {
-            nonSwappableTokens.push(address);
+            unpurgableTokens.push(address);
           }
         }
       }
 
-      this.updateStatusLog(`📊 Found ${swappableTokens.length} swappable, ${nonSwappableTokens.length} non-swappable tokens`, 'info');
+      this.updateStatusLog(`📊 Found ${purgableTokens.length} purgable, ${unpurgableTokens.length} unpurgable tokens`, 'info');
 
       // Step 3: Get estimate (include all tokens)
       this.updateStatusLog('📊 Calculating estimated output...', 'info');
@@ -775,14 +829,20 @@ class Sweeper {
       }
 
       // Step 4: Show confirmation modal
+      const netAmount = totalPRGX * (1 - CONFIG.SWEEP_FEE_PERCENT / 100);
+      const baseReward = this.BASE_REWARD;
+      const totalWithBonus = netAmount + baseReward;
+
       const confirmed = await this.showConfirmationModal(selectedTokenAddresses, {
         grossAmount: totalPRGX,
         feeAmount: totalPRGX * (CONFIG.SWEEP_FEE_PERCENT / 100),
-        netAmount: totalPRGX * (1 - CONFIG.SWEEP_FEE_PERCENT / 100),
+        netAmount: netAmount,
+        baseReward: baseReward,
+        totalWithBonus: totalWithBonus,
         usdValue: totalUSD,
-        rawEstimate: ethers.parseEther(totalPRGX.toString()),
-        swappableCount: swappableTokens.length,
-        nonSwappableCount: nonSwappableTokens.length
+        rawEstimate: this.safeParseEther(totalPRGX),
+        purgableCount: purgableTokens.length,
+        unpurgableCount: unpurgableTokens.length
       });
 
       if (!confirmed) {
@@ -793,37 +853,48 @@ class Sweeper {
       this.updateStatusLog('📋 Checking token approvals...', 'info');
       await this.handleApprovals(selectedTokenAddresses);
 
-      // Step 6: Process swappable tokens (swap to PRGX directly)
-      this.updateStatusLog('🔄 Swapping swappable tokens to PRGX...', 'info');
+      // Step 6: Process purgable tokens (attempt swap to PRGX)
+      this.updateStatusLog('🔄 Attempting to swap purgable tokens to PRGX...', 'info');
 
-      for (const address of swappableTokens) {
+      for (const address of purgableTokens) {
         const lookupAddr = address.toLowerCase();
         const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
         if (token) {
-          // Swap to PRGX and send to user's wallet
-          const swapResult = await this.swapOnPulseX(address, token.balance, window.wallet.address);
-          if (!swapResult.success) {
-            // If swap fails, transfer to sweep contract as fallback
-            this.updateStatusLog(`⚠️ Swap failed, transferring to sweep contract: ${address}`, 'warning');
+          // Only attempt swap if token has non-zero balance
+          if (token.balance > 0n) {
+            this.updateStatusLog(`🔄 Attempting to swap ${this.getTokenSymbol(address)} to PRGX...`, 'info');
+            const swapResult = await this.swapOnPulseX(address, token.balance, window.wallet.address);
+            if (!swapResult.success) {
+              // If swap fails, transfer to sweep contract as fallback
+              this.updateStatusLog(`⚠️ Swap failed, transferring to sweep contract: ${address}`, 'warning');
+              await this.transferToSweepContract(address, token.balance);
+            } else {
+              this.updateStatusLog(`✅ Successfully swapped ${this.getTokenSymbol(address)} to PRGX`, 'success');
+            }
+          } else {
+            // Zero balance - transfer to sweep contract
+            this.updateStatusLog(`📤 Zero balance token, transferring to sweep contract: ${address}`, 'info');
             await this.transferToSweepContract(address, token.balance);
           }
         }
       }
 
-      // Step 7: Process non-swappable tokens (transfer to sweep contract)
-      this.updateStatusLog('📤 Transferring non-swappable tokens to sweep contract...', 'info');
+      // Step 7: Process unpurgable tokens (transfer to sweep contract if any)
+      if (unpurgableTokens.length > 0) {
+        this.updateStatusLog('📤 Transferring unpurgable tokens to sweep contract...', 'info');
 
-      for (const address of nonSwappableTokens) {
-        const lookupAddr = address.toLowerCase();
-        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
-        if (token) {
-          await this.transferToSweepContract(address, token.balance);
+        for (const address of unpurgableTokens) {
+          const lookupAddr = address.toLowerCase();
+          const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
+          if (token) {
+            await this.transferToSweepContract(address, token.balance);
+          }
         }
       }
 
-      // Step 8: Call sweep contract to process non-swappable tokens and reward PRGX
-      if (nonSwappableTokens.length > 0) {
-        this.updateStatusLog('🔄 Processing sweep contract for non-swappable tokens...', 'info');
+      // Step 8: Call sweep contract to process unpurgable tokens and reward PRGX
+      if (unpurgableTokens.length > 0) {
+        this.updateStatusLog('🔄 Processing sweep contract for unpurgable tokens...', 'info');
 
         try {
           const sweeperContract = new ethers.Contract(
@@ -832,8 +903,8 @@ class Sweeper {
             window.wallet.signer
           );
 
-          // Call the sweep contract to process non-swappable tokens
-          const tx = await sweeperContract.sweep(nonSwappableTokens);
+          // Call the sweep contract to process unpurgable tokens
+          const tx = await sweeperContract.sweep(unpurgableTokens);
 
           this.updateStatusLog(`⏳ Sweep contract processing: ${tx.hash}`, 'pending');
 
@@ -846,7 +917,39 @@ class Sweeper {
         }
       }
 
-      // Step 9: Check actual PRGX balance in wallet and auto-stake
+      // Step 9: Verify token balances after sweep
+      this.updateStatusLog('🔍 Verifying token balances after sweep...', 'info');
+
+      const verificationResults = [];
+      for (const address of selectedTokenAddresses) {
+        const lookupAddr = address.toLowerCase();
+        const token = window.tokenDiscovery.discoveredTokens.get(lookupAddr);
+        if (token) {
+          const tokenContract = new ethers.Contract(
+            address,
+            CONFIG.ABIS.ERC20,
+            window.wallet.provider
+          );
+          const currentBalance = await tokenContract.balanceOf(window.wallet.address);
+          const wasSwept = currentBalance === 0n || currentBalance < token.balance;
+
+          verificationResults.push({
+            address: address,
+            symbol: token.symbol,
+            previousBalance: token.balance,
+            currentBalance: currentBalance,
+            wasSwept: wasSwept
+          });
+
+          if (wasSwept) {
+            this.updateStatusLog(`✅ ${token.symbol} successfully swept (balance: ${ethers.formatEther(currentBalance)})`, 'success');
+          } else {
+            this.updateStatusLog(`⚠️ ${token.symbol} may not have been swept (balance: ${ethers.formatEther(currentBalance)})`, 'warning');
+          }
+        }
+      }
+
+      // Step 10: Check actual PRGX balance in wallet and auto-stake
       this.updateStatusLog('🔍 Checking PRGX balance in wallet...', 'info');
 
       // Get actual PRGX balance from wallet
@@ -868,13 +971,14 @@ class Sweeper {
         this.updateStatusLog('ℹ️ No PRGX in wallet to stake', 'info');
       }
 
-      // Step 10: Success
-      this.updateStatusLog(`✅ Sweep completed! ${stakedAmount > 0 ? stakedAmount.toFixed(4) + ' PRGX auto-staked' : ''}`, 'success');
+      // Step 11: Success
+      const sweptCount = verificationResults.filter(r => r.wasSwept).length;
+      this.updateStatusLog(`✅ Sweep completed! ${sweptCount}/${verificationResults.length} tokens swept. Received ${totalWithBonus.toFixed(4)} PRGX (including ${baseReward.toFixed(4)} bonus)${stakedAmount > 0 ? ', ' + stakedAmount.toFixed(4) + ' PRGX auto-staked' : ''}`, 'success');
 
-      // Step 11: Refresh data
+      // Step 12: Refresh data
       await this.postSweepRefresh();
 
-      return { success: true, message: 'Sweep-to-wallet completed', stakedAmount };
+      return { success: true, message: 'Sweep-to-wallet completed', prgxReceived: totalWithBonus, stakedAmount, verificationResults };
     } catch (error) {
       this.updateStatusLog(`❌ Sweep-to-wallet failed: ${error.message}`, 'error');
       throw error;
@@ -899,7 +1003,7 @@ class Sweeper {
     }
 
     try {
-      this.updateStatusLog(`🔄 Auto-staking ${amountPRGX.toFixed(4)} PRGX...`, 'info');
+      this.updateStatusLog(`🔄 Step: Auto-staking ${amountPRGX.toFixed(4)} PRGX...`, 'info');
 
       // Check if staking contract is available
       if (!CONFIG.CONTRACTS.STAKING || CONFIG.CONTRACTS.STAKING === '0x0000000000000000000000000000000000000000') {
@@ -907,12 +1011,19 @@ class Sweeper {
         return 0;
       }
 
+      this.updateStatusLog('🔍 Step: Checking PRGX staking approval...', 'info');
+
       // Check and handle PRGX approval for staking
       const needsApproval = await this.checkPRGXStakingApproval(amountPRGX);
       if (needsApproval) {
-        this.updateStatusLog('📝 Approving PRGX for staking...', 'info');
+        this.updateStatusLog('📝 Step: Approving PRGX for staking...', 'info');
         await this.approvePRGXForStaking(amountPRGX);
+        this.updateStatusLog('✅ Step: PRGX approval completed', 'success');
+      } else {
+        this.updateStatusLog('✅ Step: PRGX already approved for staking', 'success');
       }
+
+      this.updateStatusLog('🚀 Step: Executing stake transaction...', 'info');
 
       // Execute stake
       const stakingContract = new ethers.Contract(
@@ -924,23 +1035,25 @@ class Sweeper {
       const amountWei = ethers.parseEther(amountPRGX.toString());
       const tx = await stakingContract.stake(amountWei);
 
-      this.updateStatusLog(`⏳ Stake transaction: ${tx.hash}`, 'pending');
+      this.updateStatusLog(`⏳ Step: Waiting for stake confirmation... TX: ${tx.hash}`, 'pending');
 
       const receipt = await tx.wait();
 
-      this.updateStatusLog(`✅ Successfully staked ${amountPRGX.toFixed(4)} PRGX!`, 'success');
-      window.wallet.showToast(`Auto-staked ${amountPRGX.toFixed(4)} PRGX!`, 'success');
+      this.updateStatusLog(`✅ Step: Successfully staked ${amountPRGX.toFixed(4)} PRGX for 24 hours!`, 'success');
+      this.updateStatusLog(`📊 Step: Refreshing staking dashboard...`, 'info');
+      window.wallet.showToast(`Auto-staked ${amountPRGX.toFixed(4)} PRGX for 24 hours!`, 'success');
 
       // Refresh staking dashboard if available
       if (window.stakingManager) {
         await window.stakingManager.loadDashboard();
+        this.updateStatusLog('✅ Step: Staking dashboard refreshed', 'success');
       }
 
       return amountPRGX;
 
     } catch (error) {
       console.error('Auto-stake failed:', error);
-      this.updateStatusLog(`⚠️ Auto-stake failed: ${error.message}. PRGX remains in your wallet.`, 'warning');
+      this.updateStatusLog(`❌ Step: Auto-stake failed: ${error.message}. PRGX remains in your wallet.`, 'error');
       window.wallet.showToast('Auto-stake failed. PRGX remains in wallet.', 'warning');
       return 0;
     }
