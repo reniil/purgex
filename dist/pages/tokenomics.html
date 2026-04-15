@@ -1,0 +1,239 @@
+<!-- ================================================================
+// TOKENOMICS PAGE — Supply breakdown and charts
+// ================================================================ -->
+
+<div class="tokenomics-page">
+
+  <div class="container">
+    
+    <!-- Hero Section -->
+    <div class="text-center mb-8">
+      <h1 class="mb-4">Tokenomics</h1>
+      <p style="color: var(--text-2); font-size: 1.1rem; max-width: 600px; margin: 0 auto;">
+        Understanding the PRGX token distribution and economic model
+      </p>
+    </div>
+
+    <!-- Price Widget -->
+    <div class="card card-glow mb-8" style="text-align: center; padding: 2rem;">
+      <h3 style="margin-bottom: 1.5rem;">PRGX Price Information</h3>
+      <div class="grid grid-3" style="gap: 2rem;">
+        <div>
+          <div class="label" style="margin-bottom: 0.5rem;">Current Price</div>
+          <div class="value prgx-price-display" style="font-size: 2rem;">$0.000000</div>
+          <div class="sub" style="margin-top: 0.5rem;">USD per PRGX</div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom: 0.5rem;">Market Cap</div>
+          <div class="value" id="marketCap" style="font-size: 2rem;">$—</div>
+          <div class="sub" style="margin-top: 0.5rem;">Fully diluted</div>
+        </div>
+        <div>
+          <div class="label" style="margin-bottom: 0.5rem;">Liquidity</div>
+          <div class="value" id="liquidity" style="font-size: 2rem;">$—</div>
+          <div class="sub" style="margin-top: 0.5rem;">PulseX pool</div>
+        </div>
+      </div>
+      <div class="price-timestamp" style="margin-top: 1rem; color: var(--text-3); font-size: 0.9rem;">
+        Updated 30s ago
+      </div>
+    </div>
+
+    <!-- Supply Distribution -->
+    <div class="mb-8">
+      <h2 class="mb-6 text-center">Supply Distribution</h2>
+      <div class="card">
+        <div style="margin-bottom: 2rem;">
+          <!-- Visual bars -->
+          <div class="supply-bars" style="space-y: 1rem;">
+            <div class="supply-item" data-category="liquidity" data-percent="50">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Liquidity Pool</span>
+                <span>500M PRGX (50%)</span>
+              </div>
+              <div class="progress-bar" style="height: 24px;">
+                <div class="progress-fill" style="width: 50%; background: var(--grad-brand);"></div>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-3); margin-top: 0.5rem;">
+                🔒 Locked 2+ years • PulseX trading pair
+              </div>
+            </div>
+
+            <div class="supply-item" data-category="treasury" data-percent="25">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Treasury</span>
+                <span>250M PRGX (25%)</span>
+              </div>
+              <div class="progress-bar" style="height: 24px;">
+                <div class="progress-fill" style="width: 25%; background: var(--grad-purple);"></div>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-3); margin-top: 0.5rem;">
+                🏛️ 3-of-5 multisig • Protocol development
+              </div>
+            </div>
+
+            <div class="supply-item" data-category="team" data-percent="15">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Team & Advisors</span>
+                <span>150M PRGX (15%)</span>
+              </div>
+              <div class="progress-bar" style="height: 24px;">
+                <div class="progress-fill" style="width: 15%; background: var(--grad-glow-v);"></div>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-3); margin-top: 0.5rem;">
+                ⏰ 12-month vesting • 1-year cliff
+              </div>
+            </div>
+
+            <div class="supply-item" data-category="community" data-percent="5">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Community Rewards</span>
+                <span>50M PRGX (5%)</span>
+              </div>
+              <div class="progress-bar" style="height: 24px;">
+                <div class="progress-fill" style="width: 5%; background: var(--green);"></div>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-3); margin-top: 0.5rem;">
+                🎁 Airdrops • Community incentives
+              </div>
+            </div>
+
+            <div class="supply-item" data-category="airdrops" data-percent="3">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Strategic Airdrops</span>
+                <span>30M PRGX (3%)</span>
+              </div>
+              <div class="progress-bar" style="height: 24px;">
+                <div class="progress-fill" style="width: 3%; background: var(--pink);"></div>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-3); margin-top: 0.5rem;">
+                📍 Targeted user acquisition
+              </div>
+            </div>
+
+            <div class="supply-item" data-category="dev" data-percent="2">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Development Fund</span>
+                <span>20M PRGX (2%)</span>
+              </div>
+              <div class="progress-bar" style="height: 24px;">
+                <div class="progress-fill" style="width: 2%; background: var(--yellow);"></div>
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-3); margin-top: 0.5rem;">
+                🔧 Ongoing development • Security audits
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total Supply -->
+        <div style="text-align: center; padding: 2rem; background: var(--bg-input); border-radius: var(--r-md);">
+          <div style="font-size: 0.9rem; color: var(--text-3); margin-bottom: 0.5rem;">Total Supply</div>
+          <div style="font-size: 2.5rem; font-weight: 700; background: var(--grad-brand); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            1,000,000,000 PRGX
+          </div>
+          <div style="font-size: 0.9rem; color: var(--text-3); margin-top: 0.5rem;">No inflation • Fixed supply</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vesting Timeline -->
+    <div class="mb-8">
+      <h2 class="mb-6 text-center">Vesting Timeline</h2>
+      <div class="card">
+        <div style="position: relative; padding: 2rem 0;">
+          <!-- Timeline line -->
+          <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--border-2); transform: translateX(-50%);"></div>
+          
+          <!-- Timeline items -->
+          <div class="timeline-items" style="space-y: 3rem;">
+            <div class="timeline-item" style="display: flex; align-items: center; margin-bottom: 3rem;">
+              <div style="flex: 1; text-align: right; padding-right: 2rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Launch</div>
+                <div style="color: var(--text-3); font-size: 0.9rem;">Q2 2026</div>
+                <div style="color: var(--text-2); margin-top: 0.5rem;">Liquidity locked • Staking live</div>
+              </div>
+              <div style="width: 16px; height: 16px; background: var(--primary); border-radius: 50%; position: relative; z-index: 1;"></div>
+              <div style="flex: 1; padding-left: 2rem;"></div>
+            </div>
+
+            <div class="timeline-item" style="display: flex; align-items: center; margin-bottom: 3rem;">
+              <div style="flex: 1; padding-right: 2rem;"></div>
+              <div style="width: 16px; height: 16px; background: var(--primary-light); border-radius: 50%; position: relative; z-index: 1;"></div>
+              <div style="flex: 1; padding-left: 2rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Team Cliff Ends</div>
+                <div style="color: var(--text-3); font-size: 0.9rem;">Q2 2027</div>
+                <div style="color: var(--text-2); margin-top: 0.5rem;">Team tokens begin vesting</div>
+              </div>
+            </div>
+
+            <div class="timeline-item" style="display: flex; align-items: center;">
+              <div style="flex: 1; text-align: right; padding-right: 2rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Full Vesting</div>
+                <div style="color: var(--text-3); font-size: 0.9rem;">Q2 2028</div>
+                <div style="color: var(--text-2); margin-top: 0.5rem;">All tokens fully vested</div>
+              </div>
+              <div style="width: 16px; height: 16px; background: var(--pink); border-radius: 50%; position: relative; z-index: 1;"></div>
+              <div style="flex: 1; padding-left: 2rem;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buy PRGX CTA -->
+    <div class="mb-8">
+      <div class="card card-glow text-center" style="padding: 3rem;">
+        <h2 style="margin-bottom: 1.5rem;">Get PRGX Tokens</h2>
+        <p style="color: var(--text-2); margin-bottom: 2rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+          Purchase PRGX on PulseX, the leading decentralized exchange on PulseChain. 
+          Trade directly from your wallet with zero slippage on large orders.
+        </p>
+        
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <a href="${window.CONFIG?.PULSEX_SWAP_URL || '#'}" class="btn-primary" target="_blank" style="font-size: 1.1rem; padding: 16px 40px;">
+            💰 Buy on PulseX
+          </a>
+          <a href="#/sweep" class="btn-secondary" style="font-size: 1.1rem; padding: 16px 40px;">
+            🔥 Sweep for PRGX
+          </a>
+        </div>
+        
+        <div style="margin-top: 2rem; padding: 1.5rem; background: var(--bg-input); border-radius: var(--r-md); max-width: 500px; margin-left: auto; margin-right: auto;">
+          <h4 style="margin-bottom: 1rem; color: var(--text-2);">Why Buy PRGX?</h4>
+          <div style="text-align: left; color: var(--text-3); font-size: 0.95rem;">
+            <p style="margin-bottom: 0.5rem;">✅ Fixed supply of 1B tokens</p>
+            <p style="margin-bottom: 0.5rem;">✅ Earn 6.4 PRGX/second through staking</p>
+            <p style="margin-bottom: 0.5rem;">✅ 50% of supply locked in liquidity</p>
+            <p style="margin-bottom: 0.5rem;">✅ No admin keys or special privileges</p>
+            <p>✅ Transparent on-chain operations</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Token Metrics -->
+    <div>
+      <h2 class="mb-6 text-center">Key Metrics</h2>
+      <div class="grid grid-3">
+        <div class="card">
+          <div class="label" style="margin-bottom: 0.5rem;">Circulating Supply</div>
+          <div class="value" id="circulatingSupply">—</div>
+          <div class="sub">Currently available</div>
+        </div>
+        <div class="card">
+          <div class="label" style="margin-bottom: 0.5rem;">Staked Supply</div>
+          <div class="value" id="stakedSupply">—</div>
+          <div class="sub">In staking contract</div>
+        </div>
+        <div class="card">
+          <div class="label" style="margin-bottom: 0.5rem;">Burned Tokens</div>
+          <div class="value">0</div>
+          <div class="sub">No token burning</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>

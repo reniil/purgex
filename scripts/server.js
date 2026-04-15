@@ -139,14 +139,14 @@ const handleAPI = (req, res) => {
 
 // Static file serving
 const serveStatic = (req, res) => {
-  let filePath = path.join(__dirname, '..', 'frontend', req.url === '/' ? 'index.html' : req.url);
+  let filePath = path.join(__dirname, '..', 'dist', req.url === '/' ? 'index.html' : req.url);
   const extname = String(path.extname(filePath)).toLowerCase();
   const mimeType = mimeTypes[extname] || 'application/octet-stream';
 
   fs.access(filePath, fs.constants.F_OK, (err) => {
     if (err) {
       // SPA fallback
-      filePath = path.join(__dirname, '..', 'frontend', 'index.html');
+      filePath = path.join(__dirname, '..', 'dist', 'index.html');
       fs.readFile(filePath, (err, content) => {
         if (err) {
           res.writeHead(404, { 'Content-Type': 'text/html' });

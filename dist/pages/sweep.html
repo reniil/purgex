@@ -1,0 +1,191 @@
+<!-- ================================================================
+// SWEEP PAGE — Main dust sweep interface
+// ================================================================ -->
+
+<div class="sweep-page">
+
+  <!-- STEP 1: WALLET CONNECTION PANEL -->
+  <div class="connect-panel requires-wallet" id="connectPanel">
+    <div class="container">
+      <div class="card card-glow" style="text-align: center; padding: 4rem 2rem;">
+        <div style="font-size: 4rem; margin-bottom: 2rem;">🔗</div>
+        <h2 style="margin-bottom: 1rem;">Connect Your Wallet</h2>
+        <p style="color: var(--text-2); margin-bottom: 3rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+          To discover your dust tokens, connect your Web3 wallet. We support MetaMask, Rabby, and any EIP-1193 compatible wallet.
+        </p>
+        
+        <button class="btn-primary" onclick="wallet.connect()" style="font-size: 1.1rem; padding: 16px 40px;">
+          Connect Wallet
+        </button>
+        
+        <div style="margin-top: 2rem; padding: 1.5rem; background: var(--bg-input); border-radius: var(--r-md);">
+          <h4 style="margin-bottom: 1rem; color: var(--text-2);">Network Requirement</h4>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;">
+            <span class="badge badge-purple">PulseChain</span>
+            <span style="color: var(--text-3);">Chain ID: 369</span>
+          </div>
+          <p style="color: var(--text-3); font-size: 0.9rem; margin-top: 0.5rem;">
+            You'll be automatically prompted to switch if you're on the wrong network
+          </p>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+          <h4 style="margin-bottom: 1rem; color: var(--text-2);">Supported Wallets</h4>
+          <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap;">
+            <div style="text-align: center;">
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">🦊</div>
+              <div style="font-size: 0.9rem; color: var(--text-3);">MetaMask</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">🐰</div>
+              <div style="font-size: 0.9rem; color: var(--text-3);">Rabby</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 2rem; margin-bottom: 0.5rem;">🌐</div>
+              <div style="font-size: 0.9rem; color: var(--text-3);">Any EIP-1193</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: TOKEN DISCOVERY (shown after connect) -->
+  <div class="discovery-panel hidden" id="discoveryPanel">
+    <div class="container">
+      <!-- Header row -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+        <h2>Your Dust Tokens</h2>
+        <div class="wallet-info" style="display: flex; align-items: center; gap: 1rem;">
+          <span class="mono address wallet-address">0x1234...5678</span>
+          <span class="badge badge-purple" id="walletPRGXB">— PRGX</span>
+          <button class="btn-icon" onclick="wallet.disconnect()">✕</button>
+        </div>
+      </div>
+
+      <!-- Discovery status -->
+      <div class="discovery-status" id="discoveryStatus" style="margin-bottom: 2rem;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="glow-dot"></div>
+          <span>Scanning wallet for ERC-20 tokens...</span>
+          <span style="color: var(--text-3);">(0%)</span>
+        </div>
+        <div class="progress-bar" style="margin-top: 10px;">
+          <div class="progress-fill" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Token table -->
+      <div class="card" style="margin-bottom: 2rem;">
+        <div class="table-wrapper">
+          <table class="token-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectAll"> SELECT ALL</th>
+                <th>TOKEN</th>
+                <th>BALANCE</th>
+                <th>TYPE</th>
+                <th>EST. VALUE</th>
+                <th>EST. PRGX</th>
+              </tr>
+            </thead>
+            <tbody id="tokenTableBody">
+              <!-- Populated by tokens.js -->
+              <tr>
+                <td colspan="6">
+                  <div class="skeleton skeleton-row"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="6">
+                  <div class="skeleton skeleton-row"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="6">
+                  <div class="skeleton skeleton-row"></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Custom token input -->
+      <div class="card">
+        <h4 style="margin-bottom: 1rem;">Add Token Manually</h4>
+        <p style="color: var(--text-3); font-size: 0.9rem; margin-bottom: 1rem;">
+          Know a token address that wasn't discovered? Add it manually here.
+        </p>
+        <div class="input-row" style="display: flex; gap: 1rem;">
+          <input class="input" id="customTokenInput" placeholder="Paste ERC-20 contract address (0x...)" style="flex: 1;">
+          <button class="btn-secondary" onclick="tokenDiscovery.addCustomToken(document.getElementById('customTokenInput').value)">
+            Add Token
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: SWEEP SUMMARY SIDEBAR -->
+  <div class="container">
+    <div style="display: grid; grid-template-columns: 1fr 380px; gap: 2rem; align-items: start;">
+      <!-- Left side: Token discovery (already shown above) -->
+      
+      <!-- Right side: Sweep summary -->
+      <div class="card card-glow sweep-summary" id="sweepSummary" style="position: sticky; top: 100px;">
+        <h3 style="margin-bottom: 1.5rem;">Sweep Summary</h3>
+        
+        <div style="margin-bottom: 1.5rem;">
+          <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="color: var(--text-2);">Selected Tokens</span>
+            <span id="selectedCount" style="font-weight: 600;">0</span>
+          </div>
+          <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="color: var(--text-2);">Estimated PRGX (from sweep)</span>
+            <span id="estimatedPRGX" class="mono" style="color: var(--primary-light);">—</span>
+          </div>
+          <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; color: var(--green);">
+            <span style="color: var(--text-2);">🎁 Base Reward</span>
+            <span id="baseReward" class="mono" style="color: var(--green);">+100 PRGX</span>
+          </div>
+          <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-weight: 600; font-size: 1.1rem; padding-top: 0.5rem; border-top: 1px solid var(--border-1);">
+            <span style="color: var(--text-1);">Total PRGX</span>
+            <span id="totalPRGX" class="mono" style="color: var(--primary-light);">—</span>
+          </div>
+          <div class="summary-row" style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="color: var(--text-2);">Estimated USD</span>
+            <span id="estimatedUSD" class="mono">$—</span>
+          </div>
+          <div class="summary-row muted" style="display: flex; justify-content: space-between; margin-bottom: 1rem; color: var(--text-3); font-size: 0.9rem;">
+            <span>Protocol Fee</span>
+            <span>5%</span>
+          </div>
+        </div>
+        
+        <hr class="divider">
+
+        <button class="btn-primary" id="purgeBtn" disabled onclick="sweeper.initiateSweep()" style="width: 100%; font-size: 1.1rem;">
+          🔥 PURGE SELECTED
+        </button>
+
+        <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-input); border-radius: var(--r-md); font-size: 0.85rem; color: var(--text-3);">
+          <p style="margin-bottom: 0.5rem;">💡 <strong>Tip:</strong> Select multiple dust tokens to maximize your PRGX output.</p>
+          <p>All selected tokens will be swept and converted to PRGX.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: STATUS LOG (shown during/after sweep) -->
+  <div class="container hidden" id="statusSection" style="margin-top: 3rem;">
+    <div class="card">
+      <h3 style="margin-bottom: 1.5rem;">Transaction Log</h3>
+      <div class="status-log" id="statusLog"></div>
+      <a id="txLink" href="#" target="_blank" class="tx-link hidden" style="display: inline-block; margin-top: 1rem; color: var(--primary-light);">
+        View on PulseScan ↗
+      </a>
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,153 @@
+<!-- ================================================================
+// HOME PAGE — Hero, stats, how-it-works
+// ================================================================ -->
+
+<section class="hero">
+  <div class="hero-content animate-in">
+    <h1 class="hero-title">Sweep Dust. Earn PRGX.</h1>
+    <p class="hero-subtitle">
+      Convert worthless ERC-20 tokens into PRGX on PulseChain.
+      Stake and earn 6.4 PRGX per second.
+    </p>
+    <div class="hero-actions">
+      <a href="#/sweep" class="btn-primary">
+        🚀 Launch App
+      </a>
+      <a href="https://www.dextools.io/app/pulse/pair-explorer/0xc76f9b605a929a35f1a6d8b200630e84e27caaeb" class="btn-secondary" target="_blank" rel="noopener noreferrer">
+        💰 Buy PRGX
+      </a>
+    </div>
+    <div class="price-ticker">
+      <span>PRGX = </span>
+      <span class="price prgx-price-display">$0.000000</span>
+      <span class="updated price-timestamp">Loading...</span>
+    </div>
+  </div>
+</section>
+
+<!-- Live Stats Bar -->
+<section class="section">
+  <div class="container">
+    <div class="grid grid-4">
+      <div class="stat-card">
+        <div class="label">Total Value Locked</div>
+        <div class="value" id="tvlStat">$—</div>
+        <div class="sub">In PRGX staking</div>
+      </div>
+      <div class="stat-card accent">
+        <div class="label">Total Staked</div>
+        <div class="value" id="totalStakedStat">—</div>
+        <div class="sub">PRGX tokens</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Reward Rate</div>
+        <div class="value">6.4</div>
+        <div class="sub">PRGX per second</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Treasury</div>
+        <div class="value" id="treasuryStat">—</div>
+        <div class="sub">PRGX tokens</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How It Works -->
+<section class="section">
+  <div class="container">
+    <h2 class="text-center mb-8">How It Works</h2>
+    <div class="grid grid-4">
+      <div class="card text-center">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔗</div>
+        <h3 style="margin-bottom: 0.5rem;">1. Connect Wallet</h3>
+        <p style="color: var(--text-2); font-size: 0.95rem;">
+          Connect your MetaMask or Rabby wallet to PulseChain
+        </p>
+      </div>
+      <div class="card text-center">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+        <h3 style="margin-bottom: 0.5rem;">2. Select Dust Tokens</h3>
+        <p style="color: var(--text-2); font-size: 0.95rem;">
+          We scan your wallet for worthless ERC-20 tokens
+        </p>
+      </div>
+      <div class="card text-center">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+        <h3 style="margin-bottom: 0.5rem;">3. Approve & Sweep</h3>
+        <p style="color: var(--text-2); font-size: 0.95rem;">
+          Approve tokens and execute the sweep transaction
+        </p>
+      </div>
+      <div class="card text-center">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">💎</div>
+        <h3 style="margin-bottom: 0.5rem;">4. Receive PRGX + Stake</h3>
+        <p style="color: var(--text-2); font-size: 0.95rem;">
+          Get PRGX tokens and stake them for instant rewards
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section">
+  <div class="container">
+    <h2 class="text-center mb-8">Features</h2>
+    <div class="grid grid-3">
+      <div class="card card-glow">
+        <h3 style="margin-bottom: 1rem;">🔥 One-Click Sweep</h3>
+        <p style="color: var(--text-2);">
+          Convert multiple dust tokens into valuable PRGX in a single transaction. 
+          No more manual approvals for each token.
+        </p>
+      </div>
+      <div class="card card-glow">
+        <h3 style="margin-bottom: 1rem;">💰 Staking Rewards</h3>
+        <p style="color: var(--text-2);">
+          Stake your PRGX to earn 6.4 PRGX per second distributed among all stakers. 
+          No lock-up period, withdraw anytime.
+        </p>
+      </div>
+      <div class="card card-glow">
+        <h3 style="margin-bottom: 1rem;">🏛️ Decentralized Treasury</h3>
+        <p style="color: var(--text-2);">
+          Governed by a 3-of-5 multisig with all contracts verified on PulseScan. 
+          LP tokens locked for 2+ years.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Live Activity Feed -->
+<section class="section">
+  <div class="container">
+    <h2 class="text-center mb-8">Recent Activity</h2>
+    <div class="card">
+      <div id="activityFeed" style="max-height: 300px; overflow-y: auto;">
+        <!-- Activity items will be populated here -->
+        <div style="text-align: center; padding: 2rem; color: var(--text-3);">
+          <div class="glow-dot" style="margin: 0 auto 1rem;"></div>
+          <p>Loading recent activity...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA Section -->
+<section class="section">
+  <div class="container">
+    <div class="card card-glow text-center" style="padding: 3rem;">
+      <h2 style="margin-bottom: 1rem;">Ready to Purge Your Dust?</h2>
+      <p style="color: var(--text-2); margin-bottom: 2rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+        Join thousands of PulseChain users converting worthless tokens into valuable PRGX. 
+        Start earning rewards today.
+      </p>
+      <a href="#/sweep" class="btn-primary" style="font-size: 1.1rem; padding: 16px 40px;">
+        🔥 Start Sweeping
+      </a>
+    </div>
+  </div>
+</section>
