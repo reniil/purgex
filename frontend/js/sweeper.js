@@ -597,13 +597,17 @@ class Sweeper {
       }
 
       const router = new ethers.Contract(
-        CONFIG.APIS.PULSEX_ROUTER,
+        ethers.getAddress(CONFIG.APIS.PULSEX_ROUTER.toLowerCase()),
         CONFIG.ABIS.PULSEX_ROUTER,
         window.wallet.signer
       );
 
       // Create swap path: token -> WPLS -> PRGX
-      const path = [tokenAddress, CONFIG.CONTRACTS.WPLS, CONFIG.CONTRACTS.PRGX_TOKEN];
+      const path = [
+        ethers.getAddress(tokenAddress.toLowerCase()),
+        ethers.getAddress(CONFIG.CONTRACTS.WPLS.toLowerCase()),
+        ethers.getAddress(CONFIG.CONTRACTS.PRGX_TOKEN.toLowerCase())
+      ];
 
       // Get expected output
       const amounts = await router.getAmountsOut(amount, path);
@@ -617,7 +621,7 @@ class Sweeper {
       const deadline = Math.floor(Date.now() / 1000) + 1200;
 
       // Use provided recipient or default to treasury
-      const recipientAddress = recipient || CONFIG.CONTRACTS.TREASURY;
+      const recipientAddress = recipient || ethers.getAddress(CONFIG.CONTRACTS.TREASURY.toLowerCase());
 
       // Execute swap
       const tx = await router.swapExactTokensForTokens(
